@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key><string>Landfall</string>
+	<key>CFBundleDisplayName</key><string>Landfall</string>
+	<key>CFBundleIdentifier</key><string>com.noisebeard.Landfall</string>
+	<key>CFBundleExecutable</key><string>Landfall</string>
+	<key>CFBundleIconFile</key><string>AppIcon</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleShortVersionString</key><string>__VERSION__</string>
+	<key>CFBundleVersion</key><string>__BUILD__</string>
+	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+	<key>LSMinimumSystemVersion</key><string>14.0</string>
+	<key>LSUIElement</key><true/>
+	<key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
+	<key>NSHumanReadableCopyright</key><string>© 2026 Seánan McCullough</string>
+	<key>NSDesktopFolderUsageDescription</key><string>Landfall watches your Desktop and files what lands there.</string>
+	<key>NSDocumentsFolderUsageDescription</key><string>Landfall files items into your Documents library and tidies loose files there.</string>
+	<key>NSDownloadsFolderUsageDescription</key><string>Landfall watches Downloads and files what you download.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key><string>Landfall uses the meeting you're in when a file arrives to work out which client it belongs to. Nothing leaves your Mac.</string>
+	<key>NSAppleEventsUsageDescription</key><string>Landfall opens Terminal to run a script only when you click Run in Terminal.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key><string>com.noisebeard.Landfall</string>
+			<key>CFBundleURLSchemes</key><array><string>landfall</string></array>
+		</dict>
+	</array>
+</dict>
+</plist>
