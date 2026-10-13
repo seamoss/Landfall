@@ -6,6 +6,22 @@
     <description>Landfall updates</description>
     <language>en</language>
     <item>
+      <title>Landfall 0.6.1</title>
+      <pubDate>Tue, 13 Oct 2026 21:26:58 -0000</pubDate>
+      <sparkle:version>202610131426</sparkle:version>
+      <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>https://github.com/seamoss/Landfall/releases/tag/v0.6.1</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li>The menu shows which version of Landfall is running.</li>
+<li><code>landfall://updates</code> checks for updates (for Raycast, Shortcuts and scripts).</li>
+</ul>
+      ]]></description>
+      <enclosure url="https://github.com/seamoss/Landfall/releases/download/v0.6.1/Landfall-0.6.1.dmg" type="application/octet-stream" sparkle:edSignature="SF7rz7Qe9cqj3pFE79rG3QSRfABb2qStefq5Z7c3DOUc9nHcaRrYpSgI/NYfeQNNgTUVIMHSVWlC6S+o+JZ5Cw==" length="4441838"/>
+    </item>
+    <item>
       <title>Landfall 0.6.0</title>
       <pubDate>Tue, 13 Oct 2026 20:44:04 -0000</pubDate>
       <sparkle:version>202610131343</sparkle:version>

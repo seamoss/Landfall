@@ -5,6 +5,8 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-13
+
 ### Added
 - The menu shows which version of Landfall is running.
 - `landfall://updates` checks for updates (for Raycast, Shortcuts and scripts).
