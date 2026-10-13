@@ -1,0 +1,18 @@
+{
+  "fill" : { "solid" : "display-p3:0.04314,0.14510,0.27059,1.00000" },
+  "groups" : [
+    {
+      "layers" : [ { "glass" : true, "image-name" : "arrow.png", "name" : "arrow" } ],
+      "shadow" : { "kind" : "layer-color", "opacity" : 0.5 },
+      "translucency" : { "enabled" : true, "value" : 0.25 }
+    },
+    {
+      "layers" : [ { "glass" : false, "image-name" : "shore.png", "name" : "shore" } ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.3 }
+    },
+    {
+      "layers" : [ { "glass" : false, "image-name" : "sky.png", "name" : "sky" } ]
+    }
+  ],
+  "supported-platforms" : { "squares" : "shared" }
+}

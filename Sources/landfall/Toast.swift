@@ -199,15 +199,10 @@ final class Toast: NSObject {
 
     private func build() {
         buttons = []
-        let content = Toast.makeView(model, target: self, status: status, bar: bar, buttons: &buttons, live: true)
-        let hover = HoverView(frame: .zero)
-        hover.onHover = { [weak self] inside in self?.paused = inside; self?.updateStatus() }
-        hover.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(hover, positioned: .below, relativeTo: nil)
-        NSLayoutConstraint.activate([
-            hover.leadingAnchor.constraint(equalTo: content.leadingAnchor), hover.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            hover.topAnchor.constraint(equalTo: content.topAnchor), hover.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-        ])
+        let content = Toast.makeView(model, target: self, status: status, bar: bar, buttons: &buttons, live: true) { [weak self] inside in
+            self?.paused = inside
+            self?.updateStatus()
+        }
         let top = panel.frame.maxY
         panel.contentView = content
         let size = content.fittingSize
@@ -216,11 +211,27 @@ final class Toast: NSObject {
     }
 
     func show(at origin: NSPoint) {
-        panel.setFrameOrigin(origin)
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        panel.setFrameOrigin(reduceMotion ? origin : NSPoint(x: origin.x + 40, y: origin.y))
         panel.alphaValue = 0
         panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { $0.duration = 0.18; panel.animator().alphaValue = 1 }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = reduceMotion ? 0.2 : 0.35
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)  // quick out, soft settle
+            panel.animator().alphaValue = 1
+            panel.animator().setFrameOrigin(origin)
+        }
+        announce()
         startTicking()
+    }
+
+    /// VoiceOver hears what landed and what will happen, without the toast taking focus.
+    private func announce() {
+        var text = "Landfall: \(model.name)"
+        if let dest = model.destinationLabel { text += model.autoFile ? ", files to \(dest) in \(Int(seconds)) seconds" : ", \(dest)" }
+        panel.setAccessibilityLabel(text)
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     func move(to origin: NSPoint) {
@@ -358,35 +369,25 @@ final class Toast: NSObject {
 
     // MARK: Layout
 
+    static let cornerRadius: CGFloat = 20
+
     static func makeView(_ m: ToastModel, target: Toast?, status: NSTextField, bar: CountdownBar,
-                         buttons: inout [NSControl], live: Bool) -> NSView {
-        let root: NSView
-        if live {
-            let fx = NSVisualEffectView()
-            fx.material = .popover
-            fx.state = .active
-            fx.blendingMode = .behindWindow
-            root = fx
-        } else {
-            root = NSView()
-            root.wantsLayer = true
-            root.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        }
-        root.wantsLayer = true
-        root.layer?.cornerRadius = 14
-        root.layer?.masksToBounds = true
-        root.layer?.borderWidth = 1
-        root.layer?.borderColor = (m.trust.level == .trusted ? NSColor.separatorColor : trustColor(m.trust.level).withAlphaComponent(0.6)).cgColor
+                         buttons: inout [NSControl], live: Bool, onHover: ((Bool) -> Void)? = nil) -> NSView {
+        // Everything is laid out in `content`; the outer view supplies the material.
+        let content = NSView()
+        content.translatesAutoresizingMaskIntoConstraints = false
 
         // Thumbnail (file icon until Quick Look has one).
         let thumb = NSImageView(image: NSWorkspace.shared.icon(forFile: m.url.path))
         thumb.imageScaling = .scaleProportionallyUpOrDown
         thumb.wantsLayer = true
-        thumb.layer?.cornerRadius = 6
+        thumb.layer?.cornerRadius = 8
+        thumb.layer?.cornerCurve = .continuous
         thumb.layer?.masksToBounds = true
         thumb.translatesAutoresizingMaskIntoConstraints = false
         thumb.widthAnchor.constraint(equalToConstant: 44).isActive = true
         thumb.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        thumb.setAccessibilityElement(false)
         Thumbnail.load(m.url, size: 88) { if let img = $0 { thumb.image = img } }
 
         let title = NSTextField(labelWithString: m.name)
@@ -397,13 +398,13 @@ final class Toast: NSObject {
         var lines: [NSView] = [title, label(m.subtitle, .secondaryLabelColor)]
         // Trust only when it says something: caution, danger, or a signature.
         if m.trust.level != .trusted || m.trust.signer != nil {
-            let t = label((m.trust.level == .trusted ? "✓ " : "⚠︎ ") + m.trust.summary,
-                          m.trust.level == .trusted ? .secondaryLabelColor : trustColor(m.trust.level), lines: 2)
-            lines.append(t)
+            let symbol = m.trust.level == .trusted ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
+            lines.append(symbolLabel(symbol, m.trust.summary,
+                                     m.trust.level == .trusted ? .secondaryLabelColor : trustColor(m.trust.level)))
         }
         if let dest = m.destinationLabel {
-            let d = label("→ " + dest, .labelColor)
-            d.font = .systemFont(ofSize: 12, weight: .medium)
+            let d = symbolLabel(m.isReceipt ? "checkmark.circle.fill" : "arrow.turn.down.right", dest, .labelColor,
+                                weight: .medium, symbolColor: m.isReceipt ? .systemGreen : .secondaryLabelColor)
             d.toolTip = m.suggestion
             lines.append(d)
         } else if let s = m.suggestion {
@@ -415,12 +416,6 @@ final class Toast: NSObject {
         text.spacing = 2
         text.setContentHuggingPriority(.defaultLow, for: .horizontal)
         text.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let close = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close")!,
-                             target: target, action: #selector(Toast.close))
-        close.isBordered = false
-        close.contentTintColor = .tertiaryLabelColor
-        close.symbolConfiguration = .init(pointSize: 10, weight: .semibold)
 
         let header = NSStackView(views: [thumb, text])
         header.alignment = .top
@@ -437,9 +432,7 @@ final class Toast: NSObject {
                                   target: target, action: #selector(Toast.buttonClicked(_:)))
             } else {
                 b = NSButton(title: a.title, target: target, action: #selector(Toast.buttonClicked(_:)))
-                b.bezelStyle = .rounded
-                b.controlSize = .regular
-                b.font = .systemFont(ofSize: 12)
+                styleSecondary(b)
                 if a.confirm != nil { b.contentTintColor = .systemOrange }
             }
             b.tag = i
@@ -448,9 +441,9 @@ final class Toast: NSObject {
         }
         if m.actions.count > visibleCount {
             let more = NSPopUpButton(frame: .zero, pullsDown: true)
-            more.bezelStyle = .rounded
+            styleSecondary(more)
             (more.cell as? NSPopUpButtonCell)?.arrowPosition = .noArrow
-            more.controlSize = .regular
+            more.setAccessibilityLabel("More actions")
             let head = NSMenuItem(title: "", action: nil, keyEquivalent: "")
             head.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "More")
             more.menu?.addItem(head)
@@ -458,15 +451,16 @@ final class Toast: NSObject {
                 let item = NSMenuItem(title: a.title, action: #selector(Toast.menuPicked(_:)), keyEquivalent: "")
                 item.target = target
                 item.tag = i
+                item.image = symbol(for: a.kind).flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
                 more.menu?.addItem(item)
             }
             buttons.append(more)
             row.append(more)
         }
         let buttonRow = NSStackView(views: row)
-        buttonRow.spacing = 6
+        buttonRow.spacing = 8
 
-        status.font = .systemFont(ofSize: 11)
+        status.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         status.textColor = .secondaryLabelColor
         status.lineBreakMode = .byTruncatingTail
         let footer = NSStackView(views: [buttonRow, NSView(), status])
@@ -476,36 +470,166 @@ final class Toast: NSObject {
         let stack = NSStackView(views: [header, footer])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 14, right: 12)
+        stack.spacing = 14
+        stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 20, right: 14)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        bar.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(stack)
-        root.addSubview(bar)
+
         // ✕ sits in the corner, outside the layout, so it never pushes the text around.
+        let close = closeButton(target: target)
         close.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(close)
+        bar.translatesAutoresizingMaskIntoConstraints = false
+
+        if let onHover {
+            let hover = HoverView(frame: .zero)
+            hover.onHover = onHover
+            hover.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(hover)
+            NSLayoutConstraint.activate([
+                hover.leadingAnchor.constraint(equalTo: content.leadingAnchor), hover.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+                hover.topAnchor.constraint(equalTo: content.topAnchor), hover.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            ])
+        }
+        content.addSubview(stack)
+        content.addSubview(bar)
+        content.addSubview(close)
         NSLayoutConstraint.activate([
-            root.widthAnchor.constraint(equalToConstant: width),
-            stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: root.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            header.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -24 - 14),
-            close.topAnchor.constraint(equalTo: root.topAnchor, constant: 7),
-            close.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -7),
-            close.widthAnchor.constraint(equalToConstant: 16),
-            close.heightAnchor.constraint(equalToConstant: 16),
-            footer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -24),
-            bar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            bar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            content.widthAnchor.constraint(equalToConstant: width),
+            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: content.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            header.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -28 - 16),
+            footer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -28),
+            close.topAnchor.constraint(equalTo: content.topAnchor, constant: 8),
+            close.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -8),
+            // Countdown: an inset capsule under the buttons, clear of the rounded corners.
+            bar.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 18),
+            bar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -18),
+            bar.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -8),
             bar.heightAnchor.constraint(equalToConstant: 3),
         ])
-        return root
+
+        let tintBorder = m.trust.level == .trusted ? nil : trustColor(m.trust.level).withAlphaComponent(0.7)
+        return wrap(content, live: live, border: tintBorder)
     }
 
-    static let textWidth: CGFloat = width - 24 - 44 - 10 - 14
+    /// Liquid Glass on macOS 26; vibrant material before; solid when Reduce Transparency is on.
+    static func wrap(_ content: NSView, live: Bool, border: NSColor?) -> NSView {
+        let solid = !live || NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        let outer: NSView
+        if !solid, #available(macOS 26.0, *) {
+            let glass = NSGlassEffectView()
+            glass.cornerRadius = cornerRadius
+            glass.contentView = content
+            outer = glass
+        } else {
+            let base: NSView
+            if solid {
+                base = NSView()
+                base.wantsLayer = true
+                base.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            } else {
+                let fx = NSVisualEffectView()
+                fx.material = .popover
+                fx.state = .active
+                fx.blendingMode = .behindWindow
+                base = fx
+            }
+            base.wantsLayer = true
+            base.layer?.cornerRadius = cornerRadius
+            base.layer?.cornerCurve = .continuous
+            base.layer?.masksToBounds = true
+            base.addSubview(content)
+            NSLayoutConstraint.activate([
+                content.leadingAnchor.constraint(equalTo: base.leadingAnchor), content.trailingAnchor.constraint(equalTo: base.trailingAnchor),
+                content.topAnchor.constraint(equalTo: base.topAnchor), content.bottomAnchor.constraint(equalTo: base.bottomAnchor),
+            ])
+            outer = base
+        }
+        outer.wantsLayer = true
+        if let border {
+            outer.layer?.cornerRadius = cornerRadius
+            outer.layer?.cornerCurve = .continuous
+            outer.layer?.borderWidth = 1.5
+            outer.layer?.borderColor = border.cgColor
+        } else if solid || NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast {
+            outer.layer?.borderWidth = 1
+            outer.layer?.borderColor = NSColor.separatorColor.cgColor
+        }
+        return outer
+    }
+
+    /// Glass capsules on macOS 26, rounded bezels before.
+    static func styleSecondary(_ b: NSButton) {
+        b.controlSize = .regular
+        b.font = .systemFont(ofSize: 12)
+        if #available(macOS 26.0, *) {
+            b.bezelStyle = .glass
+            b.borderShape = .capsule
+        } else {
+            b.bezelStyle = .rounded
+        }
+    }
+
+    static func closeButton(target: Toast?) -> NSButton {
+        let image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close")!
+        let b = NSButton(image: image, target: target, action: #selector(Toast.close))
+        b.setAccessibilityLabel("Close")
+        if #available(macOS 26.0, *) {
+            b.bezelStyle = .glass
+            b.borderShape = .circle
+            b.controlSize = .mini
+            b.symbolConfiguration = .init(pointSize: 8, weight: .bold)
+        } else {
+            b.isBordered = false
+            b.contentTintColor = .tertiaryLabelColor
+            b.symbolConfiguration = .init(pointSize: 10, weight: .semibold)
+            b.widthAnchor.constraint(equalToConstant: 16).isActive = true
+            b.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        }
+        return b
+    }
+
+    static func symbol(for kind: FileAction.Kind) -> String? {
+        switch kind {
+        case .open, .openInEditor: return "arrow.up.forward.app"
+        case .preview: return "eye"
+        case .reveal: return "folder"
+        case .copyImage: return "doc.on.doc"
+        case .keep: return "pin"
+        case .fileNow, .moveToSensitive: return "tray.and.arrow.down"
+        case .askAI: return "sparkles"
+        case .unzip: return "archivebox"
+        case .importTo1Password, .openPasswordManager: return "key"
+        case .runInTerminal: return "terminal"
+        case .viewSource: return "chevron.left.forwardslash.chevron.right"
+        case .undo, .undoAll: return "arrow.uturn.backward"
+        case .installFont: return "textformat"
+        case .addToCalendar: return "calendar.badge.plus"
+        case .addContact: return "person.crop.circle.badge.plus"
+        default: return nil
+        }
+    }
+
+    /// An SF Symbol followed by text, on one line.
+    static func symbolLabel(_ symbol: String, _ text: String, _ color: NSColor, weight: NSFont.Weight = .regular,
+                            symbolColor: NSColor? = nil) -> NSTextField {
+        let font = NSFont.systemFont(ofSize: weight == .regular ? 11 : 12, weight: weight)
+        let attachment = NSTextAttachment()
+        let config = NSImage.SymbolConfiguration(pointSize: font.pointSize - 1, weight: .semibold)
+            .applying(.init(paletteColors: [symbolColor ?? color]))
+        attachment.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config)
+        let s = NSMutableAttributedString(attachment: attachment)
+        s.append(NSAttributedString(string: "  " + text, attributes: [.font: font, .foregroundColor: color]))
+        let l = NSTextField(labelWithAttributedString: s)
+        l.lineBreakMode = .byTruncatingTail
+        l.maximumNumberOfLines = 1
+        l.preferredMaxLayoutWidth = textWidth
+        l.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return l
+    }
+
+    static let textWidth: CGFloat = width - 28 - 44 - 10 - 16
 
     static func label(_ s: String, _ color: NSColor, lines: Int = 1) -> NSTextField {
         let l = NSTextField(wrappingLabelWithString: s)
@@ -562,7 +686,6 @@ final class PrimaryButton: NSButton {
         isBordered = false
         focusRingType = .none
         wantsLayer = true
-        layer?.cornerRadius = 6
         layer?.cornerCurve = .continuous
         attributedTitle = NSAttributedString(string: title, attributes: [
             .foregroundColor: NSColor.white,
@@ -577,9 +700,25 @@ final class PrimaryButton: NSButton {
     override var acceptsFirstResponder: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// Same height as the neighboring system buttons (glass capsules on macOS 26).
+    static let height: CGFloat = {
+        let probe = NSButton(title: "Keep", target: nil, action: nil)
+        Toast.styleSecondary(probe)
+        return max(22, probe.intrinsicContentSize.height)
+    }()
+
     override var intrinsicContentSize: NSSize {
         let text = attributedTitle.size()
-        return NSSize(width: ceil(text.width) + 22, height: 24)
+        return NSSize(width: ceil(text.width) + 28, height: Self.height)
+    }
+
+    override func layout() {
+        super.layout()
+        if #available(macOS 26.0, *) {
+            layer?.cornerRadius = bounds.height / 2  // capsule, like Tahoe's buttons
+        } else {
+            layer?.cornerRadius = 6
+        }
     }
 
     override var isEnabled: Bool { didSet { needsDisplay = true } }
@@ -606,7 +745,11 @@ final class CountdownBar: NSView {
         super.init(frame: frame)
         wantsLayer = true
         layer?.addSublayer(fill)
+        layer?.cornerRadius = 1.5
+        layer?.masksToBounds = true
+        fill.cornerRadius = 1.5
         updateColors()
+        setAccessibilityElement(false)
     }
 
     required init?(coder: NSCoder) { fatalError() }

@@ -3,20 +3,34 @@ import EventKit
 import LandfallCore
 import ServiceManagement
 import SwiftUI
+import UserNotifications
 
 final class SettingsModel: ObservableObject {
-    @Published var config: Config
+    /// Changes apply as you make them (debounced), like every other macOS settings window.
+    @Published var config: Config { didSet { scheduleSave() } }
     @Published var apiKeyDraft = ""
     @Published var hasAPIKey = Keychain.apiKey() != nil
     @Published var loginItem = SMAppService.mainApp.status == .enabled
     @Published var calendarAccess = EKEventStore.authorizationStatus(for: .event) == .fullAccess
-    @Published var dirty = false
-    @Published var status = ""
+    @Published var notificationsAllowed: Bool?
+    @Published var folderAccess: [String: Bool] = [:]
     weak var agent: Agent?
+    private var pendingSave: DispatchWorkItem?
+    private var loading = true
 
     init(agent: Agent?) {
         self.agent = agent
         config = (try? Config.load()) ?? .standard
+        loading = false
+        refreshPermissions()
+    }
+
+    private func scheduleSave() {
+        guard !loading else { return }
+        pendingSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.save() }
+        pendingSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
     func save() {
@@ -24,152 +38,239 @@ final class SettingsModel: ObservableObject {
             try config.save()
             agent?.configStamp = nil
             agent?.reloadConfigIfChanged()
-            dirty = false
-            status = "Saved"
-        } catch { status = "Couldn't save: \(error)" }
-    }
-
-    func revert() {
-        config = (try? Config.load()) ?? .standard
-        dirty = false
-        status = ""
+        } catch {
+            notify("Landfall couldn't save settings", "\(error)")
+        }
     }
 
     func saveKey() {
-        do {
-            try Keychain.setAPIKey(apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines))
-            apiKeyDraft = ""
-            hasAPIKey = Keychain.apiKey() != nil
-            status = hasAPIKey ? "API key saved to the keychain" : "API key removed"
-        } catch { status = "\(error)" }
+        try? Keychain.setAPIKey(apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines))
+        apiKeyDraft = ""
+        hasAPIKey = Keychain.apiKey() != nil
     }
 
     func setLoginItem(_ on: Bool) {
-        do {
-            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-        } catch { status = "Login item: \(error.localizedDescription)" }
+        if on { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() }
         loginItem = SMAppService.mainApp.status == .enabled
+    }
+
+    func refreshPermissions() {
+        loginItem = SMAppService.mainApp.status == .enabled
+        calendarAccess = EKEventStore.authorizationStatus(for: .event) == .fullAccess
+        hasAPIKey = Keychain.apiKey() != nil
+        var access: [String: Bool] = [:]
+        for r in config.roots {
+            access[r.name] = (try? FileManager.default.contentsOfDirectory(atPath: r.url.path)) != nil
+        }
+        folderAccess = access
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        UNUserNotificationCenter.current().getNotificationSettings { s in
+            DispatchQueue.main.async { self.notificationsAllowed = s.authorizationStatus == .authorized || s.authorizationStatus == .provisional }
+        }
     }
 
     func requestCalendar() {
         agent?.calendar.requestAccess { [weak self] ok in
             self?.calendarAccess = ok
-            if !ok { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!) }
+            if !ok { openPrivacy("Privacy_Calendars") }
         }
     }
 }
 
-final class SettingsWindowController: NSWindowController {
+func openPrivacy(_ anchor: String) {
+    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!)
+}
+
+/// Standard macOS settings window: toolbar tabs, fixed size, changes apply immediately.
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    static let size = NSSize(width: 680, height: 620)
+    let model: SettingsModel
+
     init(engine: Engine, agent: Agent) {
-        let model = SettingsModel(agent: agent)
-        let host = NSHostingController(rootView: SettingsView(model: model))
-        let window = NSWindow(contentViewController: host)
-        window.title = "Landfall Settings"
+        model = SettingsModel(agent: agent)
+        let tabs = NSTabViewController()
+        tabs.tabStyle = .toolbar
+        func pane<V: View>(_ title: String, _ symbol: String, _ view: V) -> NSTabViewItem {
+            let host = NSHostingController(rootView: view.frame(width: Self.size.width, height: Self.size.height))
+            host.sizingOptions = []
+            host.preferredContentSize = Self.size
+            let item = NSTabViewItem(viewController: host)
+            item.label = title
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            return item
+        }
+        tabs.addTabViewItem(pane("General", "gearshape", GeneralTab(model: model)))
+        tabs.addTabViewItem(pane("Folders", "folder", FoldersTab(model: model)))
+        tabs.addTabViewItem(pane("Clients", "person.2", ClientsTab(model: model)))
+        tabs.addTabViewItem(pane("Rules", "list.bullet.rectangle", RulesTab(model: model)))
+
+        let window = NSWindow(contentViewController: tabs)
+        window.toolbarStyle = .preference
         // Fixed size: no resizing, no zoom, no full screen.
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.collectionBehavior = [.fullScreenNone]
-        window.setContentSize(SettingsView.size)
-        window.contentMinSize = SettingsView.size
-        window.contentMaxSize = SettingsView.size
+        window.setContentSize(Self.size)
+        window.contentMinSize = Self.size
+        window.contentMaxSize = Self.size
         window.center()
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        window.delegate = self
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// Permissions may have changed in System Settings while we were away.
+    func windowDidBecomeKey(_ notification: Notification) { model.refreshPermissions() }
 }
 
-struct SettingsView: View {
-    static let size = NSSize(width: 720, height: 600)
-    @ObservedObject var model: SettingsModel
-    @State var tab = 0
-
-    var body: some View {
-        VStack(spacing: 0) {
-            TabView(selection: $tab) {
-                GeneralTab(model: model).tabItem { Label("General", systemImage: "gearshape") }.tag(0)
-                FoldersTab(model: model).tabItem { Label("Folders", systemImage: "folder") }.tag(1)
-                ClientsTab(model: model).tabItem { Label("Clients", systemImage: "person.2") }.tag(2)
-                RulesTab(model: model).tabItem { Label("Rules", systemImage: "list.bullet.rectangle") }.tag(3)
-            }
-            .padding()
-            Divider()
-            HStack {
-                Text(model.status).font(.callout).foregroundStyle(.secondary)
-                Spacer()
-                Button("Open config.json") { NSWorkspace.shared.open(Paths.configURL) }
-                Button("Revert") { model.revert() }.disabled(!model.dirty)
-                Button("Save") { model.save() }.keyboardShortcut("s").buttonStyle(.borderedProminent).disabled(!model.dirty)
-            }
-            .padding(12)
-        }
-        .frame(width: SettingsView.size.width, height: SettingsView.size.height)
-        .onChange(of: model.config.json) { _ in model.dirty = true }
-    }
-}
-
-extension Config {
-    /// For change tracking in the settings window.
-    var json: String {
-        (try? JSONEncoder().encode(self)).map { String(decoding: $0, as: UTF8.self) } ?? ""
-    }
-}
-
-// MARK: - Tabs
+// MARK: - General
 
 struct GeneralTab: View {
     @ObservedObject var model: SettingsModel
+
+    var modeExplanation: String {
+        switch model.config.mode {
+        case .shadow: return "Landfall records what it would do and suggests it; nothing moves unless you click."
+        case .review: return "Every decision waits for you in the menu bar and in toasts."
+        case .auto: return "Confident decisions happen on their own. Everything is logged and undoable."
+        }
+    }
 
     var body: some View {
         Form {
             Section {
                 Picker("Mode", selection: $model.config.mode) {
-                    Text("Shadow — only watch").tag(Mode.shadow)
-                    Text("Review — I approve").tag(Mode.review)
-                    Text("Auto — file confident items").tag(Mode.auto)
+                    Text("Watch").tag(Mode.shadow)
+                    Text("Suggest").tag(Mode.review)
+                    Text("Auto").tag(Mode.auto)
                 }
-                Toggle("Launch at login", isOn: Binding(get: { model.loginItem }, set: { model.setLoginItem($0) }))
-                Toggle("Show a toast when something lands", isOn: $model.config.toasts)
-                Stepper("Toasts stay \(Int(model.config.toastSeconds)) seconds", value: $model.config.toastSeconds, in: 5...120, step: 5)
-                Toggle("File items automatically when the countdown ends", isOn: $model.config.toastAutoFile)
-                    .disabled(!model.config.toasts)
-                Text("Only confident moves of ordinary files. Never trashes, and never touches credentials, apps, scripts or installers. Hover a toast to pause it.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle("Notifications and daily digest", isOn: $model.config.notify)
+                .pickerStyle(.segmented)
+                Text(modeExplanation).font(.callout).foregroundStyle(.secondary)
             }
-            Section("Calendar") {
-                Toggle("Use the meeting I'm in to pick a client", isOn: $model.config.useCalendar)
-                HStack {
-                    Text(model.calendarAccess ? "Calendar access granted" : "Calendar access not granted")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    if !model.calendarAccess { Button("Grant access…") { model.requestCalendar() } }
+
+            Section("Permissions") {
+                ForEach(model.config.roots, id: \.name) { r in
+                    PermissionRow(title: "\(r.name.capitalized) folder", symbol: "folder",
+                                  ok: model.folderAccess[r.name] ?? false,
+                                  fix: "Open Privacy Settings…") { openPrivacy("Privacy_FilesAndFolders") }
+                }
+                PermissionRow(title: "Notifications", symbol: "bell.badge", ok: model.notificationsAllowed ?? false,
+                              fix: "Open Notification Settings…") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
+                }
+                PermissionRow(title: "Calendar", symbol: "calendar", ok: model.calendarAccess,
+                              fix: "Grant Access…", optional: !model.config.useCalendar) { model.requestCalendar() }
+                Toggle(isOn: Binding(get: { model.loginItem }, set: { model.setLoginItem($0) })) {
+                    Label("Open at login", systemImage: "power")
                 }
             }
+
+            Section("When Something Lands") {
+                Toggle(isOn: $model.config.toasts) {
+                    Text("Show a toast")
+                    Text("A card in the corner with what it is, where it's going, and quick actions.")
+                }
+                Toggle(isOn: $model.config.toastAutoFile) {
+                    Text("File it when the countdown ends")
+                    Text("Only confident moves of ordinary files. Never trashes; never touches credentials, apps, scripts or installers. Hover to pause.")
+                }
+                .disabled(!model.config.toasts)
+                Stepper(value: $model.config.toastSeconds, in: 5...120, step: 5) {
+                    LabeledContent("Countdown", value: "\(Int(model.config.toastSeconds)) seconds")
+                }
+                .disabled(!model.config.toasts)
+                Toggle(isOn: $model.config.notify) {
+                    Text("Notifications and daily digest")
+                    Text("Alerts for credentials, and an evening summary of what was filed.")
+                }
+            }
+
+            Section("Context") {
+                Toggle(isOn: $model.config.useCalendar) {
+                    Text("Use my calendar")
+                    Text("The meeting you're in when a file arrives helps pick its client. Nothing leaves your Mac.")
+                }
+            }
+
             Section("Claude") {
-                Toggle("Ask Claude automatically about files with no home", isOn: $model.config.ai.auto)
-                TextField("Model", text: $model.config.ai.model)
-                HStack {
-                    SecureField(model.hasAPIKey ? "API key saved in keychain — paste to replace" : "Anthropic API key", text: $model.apiKeyDraft)
-                    Button(model.apiKeyDraft.isEmpty && model.hasAPIKey ? "Remove" : "Save key") { model.saveKey() }
-                        .disabled(model.apiKeyDraft.isEmpty && !model.hasAPIKey)
+                Toggle(isOn: $model.config.ai.auto) {
+                    Text("Ask Claude about files with no home")
+                    Text("Sends only the name, type, origin and a 1,500-character excerpt. Never credentials or anything private. Answers are always suggestions.")
                 }
-                Text("Only the file name, type, origin and a 1,500-character excerpt are sent. Credentials and anything flagged private never are. Claude's answers are always suggestions.")
-                    .font(.caption).foregroundStyle(.secondary)
+                TextField("Model", text: $model.config.ai.model)
+                LabeledContent("API key") {
+                    HStack {
+                        SecureField(model.hasAPIKey ? "Saved in your keychain" : "sk-ant-…", text: $model.apiKeyDraft)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 260)
+                        Button(model.apiKeyDraft.isEmpty && model.hasAPIKey ? "Remove" : "Save") { model.saveKey() }
+                            .disabled(model.apiKeyDraft.isEmpty && !model.hasAPIKey)
+                    }
+                }
             }
+
             Section("1Password") {
-                TextField("Vault for imported credentials (blank = default)", text: optional($model.config.onePasswordVault))
-                Text(OnePassword.cli != nil ? "1Password CLI found" : OnePassword.installHint)
-                    .font(.caption).foregroundStyle(.secondary)
+                TextField("Vault", text: optional($model.config.onePasswordVault), prompt: Text("Default vault"))
+                StatusLine(ok: OnePassword.cli != nil, okText: "1Password CLI found", badText: OnePassword.installHint)
             }
-            Section("Space") {
-                Toggle("Weekly report of rebuildable folders (Monday morning)", isOn: $model.config.spaceReport)
+
+            Section("Disk Space") {
+                Toggle(isOn: $model.config.spaceReport) {
+                    Text("Weekly space report")
+                    Text("Monday morning: rebuildable folders (node_modules, .venv, .next…) in idle projects.")
+                }
                 TextField("Project folders", text: commaList($model.config.spaceRoots))
-                Stepper("Idle after \(Int(model.config.spaceIdleDays)) days", value: $model.config.spaceIdleDays, in: 7...365, step: 7)
-                Button("Run space report now") { model.agent?.weeklySpaceReport(force: true) }
+                Stepper(value: $model.config.spaceIdleDays, in: 7...365, step: 7) {
+                    LabeledContent("Idle after", value: "\(Int(model.config.spaceIdleDays)) days")
+                }
+                HStack {
+                    Button("Run Space Report Now") { model.agent?.weeklySpaceReport(force: true) }
+                    Spacer()
+                    Button("Open config.json") { NSWorkspace.shared.open(Paths.configURL) }
+                        .buttonStyle(.link)
+                }
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+struct PermissionRow: View {
+    let title: String
+    let symbol: String
+    let ok: Bool
+    let fix: String
+    var optional = false
+    let action: () -> Void
+
+    var body: some View {
+        LabeledContent {
+            if ok {
+                Label("Allowed", systemImage: "checkmark.circle.fill")
+                    .labelStyle(.titleAndIcon).foregroundStyle(.green)
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: optional ? "minus.circle" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(optional ? Color.secondary : Color.orange)
+                    Button(fix, action: action)
+                }
+            }
+        } label: {
+            Label(title, systemImage: symbol)
+        }
+    }
+}
+
+struct StatusLine: View {
+    let ok: Bool
+    let okText: String
+    let badText: String
+
+    var body: some View {
+        Label(ok ? okText : badText, systemImage: ok ? "checkmark.circle.fill" : "info.circle")
+            .font(.callout)
+            .foregroundStyle(ok ? Color.green : Color.secondary)
     }
 }
 
@@ -221,95 +322,198 @@ struct FoldersTab: View {
     }
 }
 
+struct EditIndex: Identifiable { let id: Int }
+
 struct ClientsTab: View {
     @ObservedObject var model: SettingsModel
-    @State private var selection: Int?
+    @State private var editing: EditIndex?
+
+    func summary(_ c: ClientConfig) -> String {
+        var parts: [String] = []
+        if !c.people.isEmpty { parts.append("\(c.people.count) \(c.people.count == 1 ? "person" : "people")") }
+        if !c.aliases.isEmpty { parts.append("also “\(c.aliases.prefix(2).joined(separator: "”, “"))”") }
+        if !c.domains.isEmpty { parts.append(c.domains.joined(separator: ", ")) }
+        return ([c.folderPath] + parts).joined(separator: " · ")
+    }
 
     var body: some View {
-        HSplitView {
-            VStack(spacing: 0) {
-                List(selection: $selection) {
-                    ForEach(model.config.clients.indices, id: \.self) { i in
-                        Text(model.config.clients[i].name).tag(i)
+        Form {
+            Section {
+                ForEach(model.config.clients.indices, id: \.self) { i in
+                    LabeledContent {
+                        Button("Details…") { editing = EditIndex(id: i) }
+                    } label: {
+                        Text(model.config.clients[i].name)
+                        Text(summary(model.config.clients[i]))
                     }
                 }
+            } header: {
+                Text("Clients")
+            } footer: {
                 HStack {
-                    Button { model.config.clients.append(ClientConfig(name: "New client")); selection = model.config.clients.count - 1 } label: { Image(systemName: "plus") }
-                    Button {
-                        if let i = selection { model.config.clients.remove(at: i); selection = nil }
-                    } label: { Image(systemName: "minus") }.disabled(selection == nil)
-                    Spacer()
-                }
-                .buttonStyle(.borderless).padding(6)
-            }
-            .frame(minWidth: 180, maxWidth: 220)
-
-            if let i = selection, model.config.clients.indices.contains(i) {
-                Form {
-                    TextField("Name", text: $model.config.clients[i].name)
-                    TextField("Folder (default Clients/<name>)", text: optional($model.config.clients[i].folder))
-                    TextField("Aliases", text: commaList($model.config.clients[i].aliases))
-                    TextField("People", text: commaList($model.config.clients[i].people))
-                    TextField("Domains", text: commaList($model.config.clients[i].domains))
-                    Text("Comma-separated. People match meeting participants and calendar attendees; domains match download sites and attendee emails.")
+                    Text("Files mentioning a client, from their people, sites or meetings, go to the client's folder.")
                         .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Add Client…") {
+                        model.config.clients.append(ClientConfig(name: "New Client"))
+                        editing = EditIndex(id: model.config.clients.count - 1)
+                    }
                 }
-                .formStyle(.grouped)
-            } else {
-                Text("Select a client").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .formStyle(.grouped)
+        .sheet(item: $editing) { e in
+            if model.config.clients.indices.contains(e.id) {
+                ClientEditor(client: $model.config.clients[e.id],
+                             onDelete: { model.config.clients.remove(at: e.id); editing = nil },
+                             onDone: { editing = nil })
             }
         }
     }
 }
 
-struct RulesTab: View {
-    @ObservedObject var model: SettingsModel
-    @State private var selection: Int?
+struct ClientEditor: View {
+    @Binding var client: ClientConfig
+    let onDelete: () -> Void
+    let onDone: () -> Void
 
     var body: some View {
-        HSplitView {
-            VStack(spacing: 0) {
-                List(selection: $selection) {
-                    ForEach(model.config.rules.indices, id: \.self) { i in
-                        Text(model.config.rules[i].name).tag(i)
-                    }
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    TextField("Name", text: $client.name)
+                    TextField("Folder", text: optional($client.folder), prompt: Text("Clients/\(client.name)"))
                 }
-                HStack {
-                    Button { model.config.rules.append(RuleConfig(name: "New rule", to: "")); selection = model.config.rules.count - 1 } label: { Image(systemName: "plus") }
-                    Button {
-                        if let i = selection { model.config.rules.remove(at: i); selection = nil }
-                    } label: { Image(systemName: "minus") }.disabled(selection == nil)
-                    Spacer()
+                Section {
+                    TextField("Also known as", text: commaList($client.aliases), prompt: Text("Acronyms, product names"))
+                    TextField("People", text: commaList($client.people), prompt: Text("Jane Doe, Sam Lee"))
+                    TextField("Domains", text: commaList($client.domains), prompt: Text("client.com"))
+                } footer: {
+                    Text("Comma-separated. People match meeting participants and calendar attendees; domains match download sites and attendee emails.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                .buttonStyle(.borderless).padding(6)
             }
-            .frame(minWidth: 200, maxWidth: 240)
+            .formStyle(.grouped)
+            SheetButtons(deleteTitle: "Delete Client", onDelete: onDelete, onDone: onDone)
+        }
+        .frame(width: 480)
+    }
+}
 
-            if let i = selection, model.config.rules.indices.contains(i) {
-                Form {
-                    TextField("Name", text: $model.config.rules[i].name)
-                    Section("When (all that are set must match)") {
-                        TextField("Name matches regex", text: optional($model.config.rules[i].nameRegex))
-                        TextField("Extensions", text: optionalList($model.config.rules[i].extensions))
-                        TextField("Content matches regex", text: optional($model.config.rules[i].contentRegex))
-                        TextField("Downloaded from (regex)", text: optional($model.config.rules[i].originRegex))
-                        TextField("Meeting participants include", text: optionalList($model.config.rules[i].participantsAny))
-                        TextField("Only in folder (downloads/desktop/documents)", text: optional($model.config.rules[i].root))
-                    }
-                    Section("Then") {
-                        Picker("Action", selection: Binding(get: { model.config.rules[i].action ?? "move" },
-                                                            set: { model.config.rules[i].action = $0 == "move" ? nil : $0 })) {
-                            Text("Move").tag("move"); Text("Trash").tag("trash"); Text("Leave it").tag("hold"); Text("Ignore").tag("ignore")
-                        }
-                        TextField("To (library-relative; {yyyy} {yyyy-mm} {client})", text: optional($model.config.rules[i].to))
-                        TextField("Rename ({date} {title} {base} {ext})", text: optional($model.config.rules[i].rename))
+struct RulesTab: View {
+    @ObservedObject var model: SettingsModel
+    @State private var editing: EditIndex?
+
+    func summary(_ r: RuleConfig) -> String {
+        var when: [String] = []
+        if let x = r.nameRegex { when.append("name ~ \(x)") }
+        if let x = r.extensions { when.append(x.map { "." + $0 }.joined(separator: " ")) }
+        if let x = r.participantsAny { when.append("with \(x.joined(separator: ", "))") }
+        if let x = r.originRegex { when.append("from \(x)") }
+        if let x = r.contentRegex { when.append("content ~ \(x)") }
+        let then: String
+        switch r.action ?? "move" {
+        case "trash": then = "Trash"
+        case "hold": then = "leave it"
+        case "ignore": then = "ignore"
+        default: then = r.to ?? "?"
+        }
+        return (when.isEmpty ? "No conditions yet" : when.joined(separator: " · ")) + "  →  " + then
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                if model.config.rules.isEmpty {
+                    Text("No rules yet. Landfall offers one when you correct the same kind of filing twice.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(model.config.rules.indices, id: \.self) { i in
+                    LabeledContent {
+                        Button("Details…") { editing = EditIndex(id: i) }
+                    } label: {
+                        Text(model.config.rules[i].name)
+                        Text(summary(model.config.rules[i]))
                     }
                 }
-                .formStyle(.grouped)
-            } else {
-                Text("Select a rule").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } header: {
+                Text("Rules")
+            } footer: {
+                HStack {
+                    Text("Rules run before Landfall's own judgement. All conditions that are set must match.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Add Rule…") {
+                        model.config.rules.append(RuleConfig(name: "New Rule", to: ""))
+                        editing = EditIndex(id: model.config.rules.count - 1)
+                    }
+                }
             }
         }
+        .formStyle(.grouped)
+        .sheet(item: $editing) { e in
+            if model.config.rules.indices.contains(e.id) {
+                RuleEditor(rule: $model.config.rules[e.id],
+                           onDelete: { model.config.rules.remove(at: e.id); editing = nil },
+                           onDone: { editing = nil })
+            }
+        }
+    }
+}
+
+struct RuleEditor: View {
+    @Binding var rule: RuleConfig
+    let onDelete: () -> Void
+    let onDone: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                TextField("Name", text: $rule.name)
+                Section("When") {
+                    TextField("Name matches", text: optional($rule.nameRegex), prompt: Text("Regular expression"))
+                    TextField("Extensions", text: optionalList($rule.extensions), prompt: Text("pdf, docx"))
+                    TextField("Content matches", text: optional($rule.contentRegex), prompt: Text("Regular expression"))
+                    TextField("Downloaded from", text: optional($rule.originRegex), prompt: Text("Regular expression on the URL"))
+                    TextField("Meeting with", text: optionalList($rule.participantsAny), prompt: Text("Jane Doe, Sam Lee"))
+                    Picker("Only in", selection: Binding(get: { rule.root ?? "" }, set: { rule.root = $0.isEmpty ? nil : $0 })) {
+                        Text("Any folder").tag("")
+                        Text("Downloads").tag("downloads")
+                        Text("Desktop").tag("desktop")
+                        Text("Documents").tag("documents")
+                    }
+                }
+                Section("Then") {
+                    Picker("Action", selection: Binding(get: { rule.action ?? "move" }, set: { rule.action = $0 == "move" ? nil : $0 })) {
+                        Text("Move").tag("move"); Text("Move to Trash").tag("trash"); Text("Leave it").tag("hold"); Text("Ignore").tag("ignore")
+                    }
+                    if (rule.action ?? "move") == "move" {
+                        TextField("To", text: optional($rule.to), prompt: Text("Clients/{client}/{yyyy-mm}"))
+                        TextField("Rename to", text: optional($rule.rename), prompt: Text("{date} {title}"))
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            SheetButtons(deleteTitle: "Delete Rule", onDelete: onDelete, onDone: onDone)
+        }
+        .frame(width: 520)
+    }
+}
+
+struct SheetButtons: View {
+    let deleteTitle: String
+    let onDelete: () -> Void
+    let onDone: () -> Void
+
+    var body: some View {
+        HStack {
+            Button(deleteTitle, role: .destructive, action: onDelete)
+            Spacer()
+            Button("Done", action: onDone)
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(16)
     }
 }
 
@@ -332,11 +536,14 @@ func optionalList(_ b: Binding<[String]?>) -> Binding<String> {
             })
 }
 
-/// Render a settings tab to PNG without showing a window (for checking layouts).
+/// Render a settings pane to PNG without showing a window (for checking layouts).
 func snapshotSettings(tab: Int, to url: URL) throws {
     let model = SettingsModel(agent: nil)
-    let host = NSHostingView(rootView: SettingsView(model: model, tab: tab))
-    host.frame = NSRect(x: 0, y: 0, width: 720, height: 760)
+    let size = SettingsWindowController.size
+    let views: [AnyView] = [AnyView(GeneralTab(model: model)), AnyView(FoldersTab(model: model)),
+                            AnyView(ClientsTab(model: model)), AnyView(RulesTab(model: model))]
+    let host = NSHostingView(rootView: views[min(tab, 3)].frame(width: size.width, height: size.height))
+    host.frame = NSRect(origin: .zero, size: size)
     let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
     window.contentView = host
     host.layoutSubtreeIfNeeded()

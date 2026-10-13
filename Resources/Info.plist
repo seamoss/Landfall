@@ -6,7 +6,8 @@
 	<key>CFBundleDisplayName</key><string>Landfall</string>
 	<key>CFBundleIdentifier</key><string>com.noisebeard.Landfall</string>
 	<key>CFBundleExecutable</key><string>Landfall</string>
-	<key>CFBundleIconFile</key><string>AppIcon</string>
+	<key>CFBundleIconFile</key><string>Landfall</string>
+	<key>CFBundleIconName</key><string>Landfall</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>__VERSION__</string>
 	<key>CFBundleVersion</key><string>__BUILD__</string>

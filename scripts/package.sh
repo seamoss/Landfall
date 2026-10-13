@@ -16,19 +16,18 @@ echo "▸ Building universal release ($VERSION, build $BUILD)"
 swift build -c release --arch arm64 --arch x86_64 >/dev/null
 BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/landfall"
 
-echo "▸ Icon"
-ICONSET="$(mktemp -d)/AppIcon.iconset"
-mkdir -p "$ICONSET"
-[ -f Resources/icon-1024.png ] || swift scripts/make-icon.swift Resources/icon-1024.png 1024
-for s in 16 32 128 256 512; do
-  sips -z $s $s Resources/icon-1024.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
-  sips -z $((s*2)) $((s*2)) Resources/icon-1024.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
-done
+echo "▸ Icon (Icon Composer layers → Liquid Glass on macOS 26, flat icns for older)"
+[ -d Resources/Landfall.icon ] || swift scripts/make-icon.swift icon Resources/Landfall.icon
+ICONOUT="$(mktemp -d)"
+# actool needs an absolute path to the .icon document.
+xcrun actool --compile "$ICONOUT" --platform macosx --minimum-deployment-target 14.0 --app-icon Landfall \
+  --output-partial-info-plist "$ICONOUT/partial.plist" "$PWD/Resources/Landfall.icon" >/dev/null
+[ -f "$ICONOUT/Assets.car" ] || { echo "actool failed to compile the icon"; exit 1; }
 
 echo "▸ Assembling $APP"
 rm -rf dist && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Landfall"
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+cp "$ICONOUT/Assets.car" "$ICONOUT/Landfall.icns" "$APP/Contents/Resources/"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Resources/Info.plist > "$APP/Contents/Info.plist"
 cp -R extras "$APP/Contents/Resources/extras" 2>/dev/null || true
 
