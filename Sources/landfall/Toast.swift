@@ -422,7 +422,7 @@ final class Toast: NSObject {
         close.contentTintColor = .tertiaryLabelColor
         close.symbolConfiguration = .init(pointSize: 10, weight: .semibold)
 
-        let header = NSStackView(views: [thumb, text, close])
+        let header = NSStackView(views: [thumb, text])
         header.alignment = .top
         header.spacing = 10
 
@@ -480,13 +480,20 @@ final class Toast: NSObject {
         bar.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(stack)
         root.addSubview(bar)
+        // ✕ sits in the corner, outside the layout, so it never pushes the text around.
+        close.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(close)
         NSLayoutConstraint.activate([
             root.widthAnchor.constraint(equalToConstant: width),
             stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             stack.topAnchor.constraint(equalTo: root.topAnchor),
             stack.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            header.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -24),
+            header.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -24 - 14),
+            close.topAnchor.constraint(equalTo: root.topAnchor, constant: 7),
+            close.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -7),
+            close.widthAnchor.constraint(equalToConstant: 16),
+            close.heightAnchor.constraint(equalToConstant: 16),
             footer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -24),
             bar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
@@ -496,7 +503,7 @@ final class Toast: NSObject {
         return root
     }
 
-    static let textWidth: CGFloat = width - 24 - 44 - 10 - 10 - 16
+    static let textWidth: CGFloat = width - 24 - 44 - 10 - 14
 
     static func label(_ s: String, _ color: NSColor, lines: Int = 1) -> NSTextField {
         let l = NSTextField(wrappingLabelWithString: s)
