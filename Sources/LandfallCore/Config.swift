@@ -193,6 +193,8 @@ public struct Config: Codable {
     public var toastSeconds: Double
     /// When a toast's countdown runs out, file the item (confident, ordinary moves only).
     public var toastAutoFile: Bool
+    /// How long the auto-file countdown runs before it files the item.
+    public var autoFileSeconds: Double
     /// Use the meeting you were in when a file arrived to pick its client.
     public var useCalendar: Bool
     public var ai: AIConfig
@@ -221,6 +223,7 @@ public struct Config: Codable {
             toasts: true,
             toastSeconds: 20,
             toastAutoFile: true,
+            autoFileSeconds: 20,
             useCalendar: true,
             ai: AIConfig(),
             onePasswordVault: nil,

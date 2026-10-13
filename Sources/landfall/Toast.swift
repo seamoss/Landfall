@@ -839,7 +839,8 @@ final class Toaster {
     func show(_ m: ToastModel) {
         Log.info("toast shown: \(m.name) [\(m.kind.rawValue), \(m.trust.level.rawValue)] actions: \(m.actions.map(\.title).joined(separator: ", "))")
         if toasts.count >= Self.maxVisible { toasts.first?.close() }
-        let t = Toast(model: m, engine: engine, seconds: engine.config.toastSeconds)
+        let seconds = m.autoFile ? engine.config.autoFileSeconds : engine.config.toastSeconds
+        let t = Toast(model: m, engine: engine, seconds: max(3, seconds))
         t.onResize = { [weak self] in self?.layout() }
         t.onClose = { [weak self] closed in
             self?.toasts.removeAll { $0 === closed }

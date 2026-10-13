@@ -169,15 +169,19 @@ struct GeneralTab: View {
             Section("When Something Lands") {
                 Toggle(isOn: $model.config.toasts) {
                     Text("Show a toast")
-                    Text("A card in the corner with what it is, where it's going, and quick actions.")
+                    Text("A card at the top of the screen: what it is, where it's going, and quick actions.")
                 }
                 Toggle(isOn: $model.config.toastAutoFile) {
                     Text("File it when the countdown ends")
                     Text("Only confident moves of ordinary files. Never trashes; never touches credentials, apps, scripts or installers. Hover to pause.")
                 }
                 .disabled(!model.config.toasts)
-                Stepper(value: $model.config.toastSeconds, in: 5...120, step: 5) {
-                    LabeledContent("Countdown", value: "\(Int(model.config.toastSeconds)) seconds")
+                Picker("File after", selection: $model.config.autoFileSeconds) {
+                    ForEach(Self.durations(including: model.config.autoFileSeconds), id: \.self) { Text(Self.label($0)).tag($0) }
+                }
+                .disabled(!model.config.toasts || !model.config.toastAutoFile)
+                Picker("Other toasts stay", selection: $model.config.toastSeconds) {
+                    ForEach(Self.durations(including: model.config.toastSeconds), id: \.self) { Text(Self.label($0)).tag($0) }
                 }
                 .disabled(!model.config.toasts)
                 Toggle(isOn: $model.config.notify) {
@@ -233,6 +237,19 @@ struct GeneralTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+extension GeneralTab {
+    static let presets: [Double] = [5, 10, 15, 20, 30, 45, 60, 90, 120, 300]
+
+    /// The presets, plus whatever odd value is in config.json so the picker never shows blank.
+    static func durations(including current: Double) -> [Double] {
+        (presets.contains(current) ? presets : (presets + [current]).sorted())
+    }
+
+    static func label(_ s: Double) -> String {
+        s < 60 ? "\(Int(s)) seconds" : s == 60 ? "1 minute" : s.truncatingRemainder(dividingBy: 60) == 0 ? "\(Int(s / 60)) minutes" : "\(Int(s)) seconds"
     }
 }
 
