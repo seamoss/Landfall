@@ -9,7 +9,7 @@ landfall — watches Downloads, Desktop and Documents and files what lands there
   landfall init [--force]              write the starter config (~/.config/landfall/config.json)
   landfall scan [--root R] [--recheck] classify everything now (respects mode)
   landfall watch [--menubar]           run the watcher in the foreground (the app does this at login)
-  landfall recent [--since 7d] [--root R]
+  landfall recent [--since 7d] [--root R] [--all]   (--all includes cleared) · recent --clear
   landfall where <query>               where did that file go?
   landfall why <query|#id>             the full history and reasoning for one item
   landfall review                      proposals waiting for you
@@ -255,8 +255,13 @@ case "app":
 case "recent":
     let e = makeEngine()
     e.reconcile()
+    if flag("--clear") {
+        let n = e.ledger.clearSettledFromRecent()
+        print(n == 0 ? "Nothing to clear." : "Cleared \(n) filed item\(n == 1 ? "" : "s") from the recent list (history kept).")
+        exit(0)
+    }
     let since = Date().addingTimeInterval(-(parseDuration(option("--since") ?? "7d") ?? 7 * 86400))
-    let items = e.ledger.recent(since: since, root: option("--root"))
+    let items = e.ledger.recent(since: since, root: option("--root"), hideCleared: !flag("--all"))
     if flag("--json") { printJSON(items.map { itemJSON($0) }) } else {
         if items.isEmpty { print("Nothing landed in that window.") }
         for it in items { print(itemLine(it)) }

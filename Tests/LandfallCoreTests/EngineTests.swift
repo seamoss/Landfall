@@ -113,3 +113,26 @@ final class EngineTests: XCTestCase {
         XCTAssertTrue(e.ledger.events(for: it.id).contains { $0.type == "corrected" })
     }
 }
+
+final class RecentListTests: XCTestCase {
+    func testClearFiledHidesSettledButKeepsPendingAndHistory() throws {
+        let s = try Sandbox()
+        s.config.mode = .auto
+        let e = try s.engine()
+        try s.write(s.downloads, "Product Call.txt", tactiqHeader)          // files (confident)
+        try s.write(s.downloads, "notes about lunch.txt", "tacos")          // held (no home)
+        e.scanNow()
+        let week = Date().addingTimeInterval(-86400)
+        XCTAssertEqual(Set(e.ledger.recent(since: week).map(\.status)), ["filed", "held"])
+
+        XCTAssertEqual(e.ledger.clearSettledFromRecent(), 1)
+        let visible = e.ledger.recent(since: week, hideCleared: true)
+        XCTAssertEqual(visible.map(\.name), ["notes about lunch.txt"], "waiting items stay")
+        XCTAssertEqual(e.ledger.recent(since: week).count, 2, "nothing is deleted")
+
+        let filed = e.ledger.search("Product Call").first!
+        XCTAssertFalse(e.ledger.events(for: filed.id).isEmpty, "history kept")
+        XCTAssertNoThrow(try e.undo(filed.id), "undo still works")
+        XCTAssertEqual(e.ledger.clearSettledFromRecent(), 0, "already cleared")
+    }
+}

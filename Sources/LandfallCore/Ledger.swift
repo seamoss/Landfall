@@ -100,6 +100,10 @@ public final class Ledger {
         try exec("CREATE INDEX IF NOT EXISTS items_hash ON items(hash)")
         try exec("CREATE INDEX IF NOT EXISTS items_inode ON items(inode)")
         try exec("CREATE INDEX IF NOT EXISTS events_item ON events(item_id)")
+        // 0.6.4: items cleared from the Recently Landed list (history is kept).
+        if !rows("PRAGMA table_info(items)").contains(where: { $0["name"] as? String == "cleared" }) {
+            try exec("ALTER TABLE items ADD COLUMN cleared INTEGER NOT NULL DEFAULT 0")
+        }
     }
 
     deinit { sqlite3_close(db) }
@@ -149,13 +153,26 @@ public final class Ledger {
         return rows("SELECT * FROM items WHERE status IN (\(q)) ORDER BY first_seen DESC", statuses).map(Item.init)
     }
 
-    public func recent(since: Date, root: String? = nil) -> [Item] {
-        if let root {
-            return rows("SELECT * FROM items WHERE first_seen>=? AND root=? AND status != 'ignored' ORDER BY first_seen DESC",
-                        [since, root]).map(Item.init)
-        }
-        return rows("SELECT * FROM items WHERE first_seen>=? AND status != 'ignored' ORDER BY first_seen DESC", [since])
-            .map(Item.init)
+    /// What landed since `since`. `hideCleared` drops items you cleared from the recent list.
+    public func recent(since: Date, root: String? = nil, hideCleared: Bool = false) -> [Item] {
+        var sql = "SELECT * FROM items WHERE first_seen>=? AND status != 'ignored'"
+        var args: [Any?] = [since]
+        if let root { sql += " AND root=?"; args.append(root) }
+        if hideCleared { sql += " AND cleared=0" }
+        return rows(sql + " ORDER BY first_seen DESC", args).map(Item.init)
+    }
+
+    /// Statuses that mean "dealt with": what Clear Filed removes from the recent list.
+    public static let settledStatuses = ["filed", "trashed", "kept", "elsewhere", "gone"]
+
+    /// Hide settled items from the recent list. Their history stays (why, where, search, undo).
+    @discardableResult
+    public func clearSettledFromRecent() -> Int {
+        let q = Self.settledStatuses.map { _ in "?" }.joined(separator: ",")
+        let n = rows("SELECT COUNT(*) AS n FROM items WHERE cleared=0 AND status IN (\(q))", Self.settledStatuses)
+            .first?["n"] as? Int64 ?? 0
+        try? exec("UPDATE items SET cleared=1 WHERE cleared=0 AND status IN (\(q))", Self.settledStatuses)
+        return Int(n)
     }
 
     public func search(_ q: String) -> [Item] {

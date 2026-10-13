@@ -119,9 +119,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         // Recently landed
         menu.addItem(.separator())
-        let recent = e.ledger.recent(since: Date().addingTimeInterval(-7 * 86400)).prefix(10)
-        menu.addItem(.sectionHeader(title: recent.isEmpty ? "Nothing Landed This Week" : "Recently Landed"))
+        let week = e.ledger.recent(since: Date().addingTimeInterval(-7 * 86400), hideCleared: true)
+        let recent = week.prefix(10)
+        menu.addItem(.sectionHeader(title: recent.isEmpty ? "Nothing New This Week" : "Recently Landed"))
         for it in recent { menu.addItem(recentItem(it)) }
+        let settled = week.filter { Ledger.settledStatuses.contains($0.status) }.count
+        if settled > 0 {
+            let clear = ActionItem("Clear Filed", symbol: "checklist.checked") { [weak self] in
+                e.ledger.clearSettledFromRecent()
+                self?.refreshBadge()
+            }
+            _ = clear.detail("Hides what's been dealt with. History, search and Undo keep working.")
+            clear.badge = NSMenuItemBadge(count: settled)
+            menu.addItem(clear)
+        }
 
         // Tools
         menu.addItem(.separator())

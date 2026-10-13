@@ -5,6 +5,9 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+### Added
+- **Clear Filed** in the menu's Recently Landed section hides everything that's been dealt with (filed, trashed, kept, moved). Items waiting for a decision stay; history, search and Undo keep working. Also `landfall recent --clear` (and `--all` to show cleared items).
+
 ## [0.6.3] - 2026-10-13
 
 ### Fixed
