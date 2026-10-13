@@ -139,6 +139,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             let host = NSHostingController(rootView: view.frame(width: Self.size.width, height: Self.size.height))
             host.sizingOptions = []
             host.preferredContentSize = Self.size
+            host.title = title  // toolbar-style tabs show the selected pane's title in the window
             let item = NSTabViewItem(viewController: host)
             item.label = title
             item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
@@ -149,7 +150,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         tabs.addTabViewItem(pane("Smart Filing", "sparkles", SmartFilingTab(model: model)))
         tabs.addTabViewItem(pane("Rules", "list.bullet.rectangle", RulesTab(model: model)))
 
+        tabs.title = "General"
         let window = NSWindow(contentViewController: tabs)
+        window.title = "General"
         window.toolbarStyle = .preference
         // Fixed size: no resizing, no zoom, no full screen.
         window.styleMask = [.titled, .closable, .miniaturizable]

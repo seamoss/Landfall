@@ -5,6 +5,12 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+### Added
+- **About Landfall** in the menu: version, build, copyright and a link to the project. Also `landfall://about`.
+
+### Fixed
+- The Settings window was titled "Untitled"; it now shows the selected pane's name.
+
 ## [0.6.1] - 2026-10-13
 
 ### Added

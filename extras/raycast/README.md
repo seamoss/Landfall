@@ -8,6 +8,7 @@
 | URL | Does |
 |---|---|
 | `landfall://settings` | Open Settings |
+| `landfall://about` | Show the About window (version) |
 | `landfall://scan` | Classify everything now |
 | `landfall://review` | Open the menu (proposals waiting) |
 | `landfall://space` | Run the space report |

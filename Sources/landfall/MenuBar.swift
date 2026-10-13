@@ -164,6 +164,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         modes.submenu = modeMenu
         menu.addItem(modes)
+        menu.addItem(ActionItem("About Landfall", symbol: "info.circle") { Agent.shared?.showAbout() })
         menu.addItem(ActionItem("Settings…", symbol: "gearshape", key: ",") { Agent.shared?.openSettings() })
         if Updater.shared.isRunning {
             if let v = Updater.shared.availableVersion {

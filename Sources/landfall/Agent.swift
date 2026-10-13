@@ -144,6 +144,7 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let e = engine
         switch comps.host ?? "" {
         case "settings": openSettings()
+        case "about": showAbout()
         case "scan": e.scanNow()
         case "space": weeklySpaceReport(force: true)
         case "updates": Updater.shared.checkForUpdates()
@@ -168,6 +169,21 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     // MARK: - Windows
+
+    /// The standard About window: icon, name, version (build), copyright, and a link to the project.
+    func showAbout() {
+        let link = "https://github.com/seamoss/Landfall"
+        let credits = NSMutableAttributedString(
+            string: "Files what lands in Downloads, Desktop and Documents.\n",
+            attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
+        credits.append(NSAttributedString(string: "github.com/seamoss/Landfall",
+                                          attributes: [.font: NSFont.systemFont(ofSize: 11), .link: URL(string: link)!]))
+        let centered = NSMutableParagraphStyle()
+        centered.alignment = .center
+        credits.addAttribute(.paragraphStyle, value: centered, range: NSRange(location: 0, length: credits.length))
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+    }
 
     func openSettings() {
         if settings == nil { settings = SettingsWindowController(engine: engine, agent: self) }
