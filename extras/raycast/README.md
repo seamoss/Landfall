@@ -11,6 +11,7 @@
 | `landfall://scan` | Classify everything now |
 | `landfall://review` | Open the menu (proposals waiting) |
 | `landfall://space` | Run the space report |
+| `landfall://updates` | Check for updates |
 | `landfall://file?path=/full/path` | File that item now |
 | `landfall://ask?path=/full/path` | Ask Claude where it belongs |
 | `landfall://toast?path=/full/path` | Show its toast |

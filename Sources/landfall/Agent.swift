@@ -146,6 +146,7 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         case "settings": openSettings()
         case "scan": e.scanNow()
         case "space": weeklySpaceReport(force: true)
+        case "updates": Updater.shared.checkForUpdates()
         case "review": bar?.statusItem.button?.performClick(nil)
         case "toast":
             if let path, let m = e.toastModel(for: URL(fileURLWithPath: path), itemId: e.ledger.activeItem(atPath: path)?.id,

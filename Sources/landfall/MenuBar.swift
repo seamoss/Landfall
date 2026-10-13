@@ -92,7 +92,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             }
         }()
         let folders = e.config.roots.map { $0.name.capitalized }.joined(separator: ", ")
-        menu.addItem(ActionItem(modeInfo.0, symbol: modeInfo.1).detail("Watching \(folders)"))
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        menu.addItem(ActionItem(modeInfo.0, symbol: modeInfo.1)
+            .detail("Watching \(folders)" + (version.map { " · Landfall \($0)" } ?? "")))
 
         // Needs a decision
         let review = e.ledger.items(statuses: ["proposed"]).filter { fileExists($0.path) }
