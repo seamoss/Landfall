@@ -6,6 +6,21 @@
     <description>Landfall updates</description>
     <language>en</language>
     <item>
+      <title>Landfall 0.6.4</title>
+      <pubDate>Tue, 13 Oct 2026 22:18:21 -0000</pubDate>
+      <sparkle:version>202610131517</sparkle:version>
+      <sparkle:shortVersionString>0.6.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>https://github.com/seamoss/Landfall/releases/tag/v0.6.4</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Clear Filed</b> in the menu&#x27;s Recently Landed section hides everything that&#x27;s been dealt with (filed, trashed, kept, moved). Items waiting for a decision stay; history, search and Undo keep working. Also <code>landfall recent --clear</code> (and <code>--all</code> to show cleared items).</li>
+</ul>
+      ]]></description>
+      <enclosure url="https://github.com/seamoss/Landfall/releases/download/v0.6.4/Landfall-0.6.4.dmg" type="application/octet-stream" sparkle:edSignature="GuQzinXEB3GX6Pxb6QZ5oxs4ybgOub+8gSM0vcOHVqb0zikboFbSAllvcx9XZdw+AprGF+qfpWw549JVL4JaAQ==" length="4452168"/>
+    </item>
+    <item>
       <title>Landfall 0.6.3</title>
       <pubDate>Tue, 13 Oct 2026 21:38:53 -0000</pubDate>
       <sparkle:version>202610131438</sparkle:version>
