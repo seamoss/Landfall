@@ -17,4 +17,4 @@ A bare executable gets new macOS folder-permission prompts on every rebuild, can
 ## Consequences
 - Folder permissions persist across updates because the signing identity is stable.
 - Releases depend on the signing certificate and notary profile on the release machine.
-- There is no in-app updater yet; users update from a new DMG (Sparkle would be the next step).
+- In-app updates: see [0009](0009-sparkle-updates.md).

@@ -21,6 +21,11 @@
 	<key>NSDownloadsFolderUsageDescription</key><string>Landfall watches Downloads and files what you download.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key><string>Landfall uses the meeting you're in when a file arrives to work out which client it belongs to. Nothing leaves your Mac.</string>
 	<key>NSAppleEventsUsageDescription</key><string>Landfall opens Terminal to run a script only when you click Run in Terminal.</string>
+	<!-- Sparkle: signed updates from the public GitHub repo. -->
+	<key>SUFeedURL</key><string>https://raw.githubusercontent.com/seamoss/Landfall/main/appcast.xml</string>
+	<key>SUPublicEDKey</key><string>ib6Fhwyn9Cs5cEufWE/FL5tlDzlFeG24881lwucUTEw=</string>
+	<key>SUEnableAutomaticChecks</key><true/>
+	<key>SUScheduledCheckInterval</key><integer>86400</integer>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

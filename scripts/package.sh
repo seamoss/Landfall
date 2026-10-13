@@ -30,11 +30,21 @@ cp "$BIN" "$APP/Contents/MacOS/Landfall"
 cp "$ICONOUT/Assets.car" "$ICONOUT/Landfall.icns" "$APP/Contents/Resources/"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Resources/Info.plist > "$APP/Contents/Info.plist"
 cp -R extras "$APP/Contents/Resources/extras" 2>/dev/null || true
+# Sparkle (auto-updates): embed the framework, symlinks intact.
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$(dirname "$BIN")/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 
 echo "▸ Signing with: $IDENTITY"
-codesign --force --options runtime --timestamp --entitlements Resources/Landfall.entitlements \
-  --sign "$IDENTITY" "$APP"
-codesign --verify --strict --verbose=2 "$APP"
+# Inside out: Sparkle's helpers, then the framework, then the app (Sparkle's documented order for Developer ID).
+SPK="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+sign() { codesign --force --options runtime --timestamp --sign "$IDENTITY" "$@"; }
+sign "$SPK/XPCServices/Installer.xpc"
+sign --preserve-metadata=entitlements "$SPK/XPCServices/Downloader.xpc"
+sign "$SPK/Autoupdate"
+sign "$SPK/Updater.app"
+sign "$APP/Contents/Frameworks/Sparkle.framework"
+sign --entitlements Resources/Landfall.entitlements "$APP"
+codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "▸ Disk image"
 STAGE="$(mktemp -d)"

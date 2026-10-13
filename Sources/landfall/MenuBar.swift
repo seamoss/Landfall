@@ -38,6 +38,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
         engine.onChange = { [weak self] in self?.refreshBadge() }
+        Updater.shared.onChange = { [weak self] in self?.refreshBadge() }
         refreshBadge()
     }
 
@@ -162,6 +163,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         modes.submenu = modeMenu
         menu.addItem(modes)
         menu.addItem(ActionItem("Settings…", symbol: "gearshape", key: ",") { Agent.shared?.openSettings() })
+        if Updater.shared.isRunning {
+            if let v = Updater.shared.availableVersion {
+                let up = ActionItem("Update to \(v)…", symbol: "arrow.down.circle.fill") { Updater.shared.checkForUpdates() }
+                up.badge = NSMenuItemBadge(string: "New")
+                menu.addItem(up)
+            } else {
+                menu.addItem(ActionItem("Check for Updates…", symbol: "arrow.down.circle") { Updater.shared.checkForUpdates() })
+            }
+        }
         menu.addItem(ActionItem("Open Log", symbol: "doc.text.magnifyingglass") { NSWorkspace.shared.open(Paths.logURL) })
         menu.addItem(.separator())
         menu.addItem(ActionItem("Quit Landfall", key: "q") { NSApp.terminate(nil) })

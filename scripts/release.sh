@@ -1,5 +1,6 @@
 #!/bin/bash
-# Cut a release: bump VERSION, test, build + sign + notarize, tag, push, publish a GitHub release with the DMG.
+# Cut a release: bump VERSION, test, build + sign + notarize, sign for Sparkle and update appcast.xml,
+# tag, publish a GitHub release with the DMG, then push main (which makes the update feed live).
 #
 #   ./scripts/release.sh 0.5.1             full release (also installs it locally)
 #   ./scripts/release.sh 0.5.1 --dry-run   everything up to the notarized DMG; no commit, tag, push or release
@@ -36,12 +37,15 @@ git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && fail "tag $TAG already 
 xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 \
   || fail "no notarytool profile \"$NOTARY_PROFILE\" — releases must be notarized (see README › Releasing)"
 gh auth status >/dev/null 2>&1 || fail "gh is not signed in"
+SPARKLE_BIN=".build/artifacts/sparkle/Sparkle/bin"
+[ -x "$SPARKLE_BIN/sign_update" ] || swift package resolve >/dev/null
+"$SPARKLE_BIN/generate_keys" -p >/dev/null 2>&1 || fail "no Sparkle signing key in the keychain (see README › Releasing)"
 grep -q '^## \[Unreleased\]' CHANGELOG.md || fail "CHANGELOG.md has no \"## [Unreleased]\" section"
 NOTES_BODY="$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | sed -e '/./,$!d')"
 [ -n "$(echo "$NOTES_BODY" | tr -d '[:space:]')" ] || fail "the Unreleased section of CHANGELOG.md is empty"
 
 PREV_VERSION="$(cat VERSION)"
-restore() { echo "$PREV_VERSION" > VERSION; git checkout -q -- CHANGELOG.md; }
+restore() { echo "$PREV_VERSION" > VERSION; git checkout -q -- CHANGELOG.md appcast.xml; }
 [ $DRY = 1 ] && trap restore EXIT
 
 echo "▸ Releasing $TAG (was $PREV_VERSION)$([ $DRY = 1 ] && echo ' — dry run')"
@@ -64,6 +68,16 @@ spctl -a -t execute dist/Landfall.app 2>/dev/null || fail "Gatekeeper rejects La
 SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
 echo "$SHA  $(basename "$DMG")" > "$DMG.sha256"
 
+echo "▸ Sparkle feed"
+BUILD_NUM="$(defaults read "$PWD/dist/Landfall.app/Contents/Info.plist" CFBundleVersion)"
+SIGNATURE="$("$SPARKLE_BIN/sign_update" "$DMG")"
+echo "$NOTES_BODY" > dist/changelog-section.md
+python3 scripts/appcast.py --version "$VERSION" --build "$BUILD_NUM" \
+  --url "https://github.com/$REPO/releases/download/$TAG/$(basename "$DMG")" \
+  --signature "$SIGNATURE" --notes dist/changelog-section.md \
+  --notes-link "https://github.com/$REPO/releases/tag/$TAG"
+xmllint --noout appcast.xml || fail "appcast.xml is not valid XML"
+
 NOTES="dist/release-notes-$VERSION.md"
 {
   echo "$NOTES_BODY"
@@ -82,16 +96,20 @@ fi
 
 # ── Publish ────────────────────────────────────────────────────────────────
 echo "▸ Commit, tag, push"
-git add VERSION CHANGELOG.md
+git add VERSION CHANGELOG.md appcast.xml
 git commit -q -m "Release $TAG"
 git tag -a "$TAG" -m "Landfall $VERSION"
-git push -q origin main "$TAG"
+# The tag first: the feed on main must not point at a DMG that isn't uploaded yet.
+git push -q origin "$TAG"
 
 echo "▸ GitHub release"
 TITLE="Landfall $VERSION"
 FIRST="$(echo "$NOTES_BODY" | grep -m1 -E '^### |^- ' | sed -E 's/^(### |- )//; s/\*\*//g; s/[:.].*$//')"
 [ -n "$FIRST" ] && TITLE="$TITLE — $FIRST"
 gh release create "$TAG" --repo "$REPO" --title "$TITLE" --notes-file "$NOTES" "$DMG" "$DMG.sha256"
+
+echo "▸ Publishing the update feed"
+git push -q origin main
 
 if [ $INSTALL = 1 ]; then
   echo "▸ Installing locally"

@@ -247,6 +247,27 @@ struct GeneralTab: View {
                 StatusLine(ok: OnePassword.cli != nil, okText: "1Password CLI found", badText: OnePassword.installHint)
             }
 
+            Section("Updates") {
+                Toggle(isOn: Binding(get: { Updater.shared.automaticallyChecks },
+                                     set: { Updater.shared.automaticallyChecks = $0; model.objectWillChange.send() })) {
+                    Text("Check for updates automatically")
+                    Text("Once a day. Updates are signed and notarized; you're told before anything installs.")
+                }
+                Toggle(isOn: Binding(get: { Updater.shared.automaticallyDownloads },
+                                     set: { Updater.shared.automaticallyDownloads = $0; model.objectWillChange.send() })) {
+                    Text("Download and install updates in the background")
+                }
+                .disabled(!Updater.shared.automaticallyChecks)
+                LabeledContent("Version") {
+                    HStack {
+                        Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development")
+                            .foregroundStyle(.secondary)
+                        Button("Check Now") { Updater.shared.checkForUpdates() }
+                            .disabled(!Updater.shared.isRunning)
+                    }
+                }
+            }
+
             Section("Disk Space") {
                 Toggle(isOn: $model.config.spaceReport) {
                     Text("Weekly space report")

@@ -16,6 +16,8 @@ On first launch Landfall adds itself to login items, opens Settings and asks for
 
 From source: `./scripts/package.sh && ./scripts/install.sh` (see [Development](#development)).
 
+**Updates** arrive automatically (from 0.6.0): Landfall checks GitHub once a day, verifies the update's signature, and offers it in the menu and a notification — it never interrupts you with a window. Settings › General › Updates turns checking and background installs on or off, and has Check Now.
+
 ## How it works
 
 ### Watched folders
@@ -168,11 +170,14 @@ Layout: `Sources/LandfallCore` (engine, classifier, ledger, actions — no UI), 
 
 ## Releasing
 
-One-time setup on the release machine: the Developer ID Application certificate in the keychain, a notary profile, and `gh` signed in:
+One-time setup on the release machine: the Developer ID Application certificate in the keychain, a notary profile, `gh` signed in, and the Sparkle update-signing key in the login keychain:
 
 ```bash
 xcrun notarytool store-credentials landfall-notary --apple-id <apple-id> --team-id 4J2T5H73JM
+.build/artifacts/sparkle/Sparkle/bin/generate_keys -p    # prints the public key if the private key is present
 ```
+
+**Back up the Sparkle private key** (`generate_keys -x <file>`, then keep that file somewhere safe such as 1Password and delete it). Without it, installed copies can't verify future updates. On a new machine, import it with `generate_keys -f <file>`.
 
 Then add notes under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) and run:
 
@@ -181,4 +186,4 @@ Then add notes under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) and run:
 ./scripts/release.sh 0.5.1             # …then commit, tag, push, publish the GitHub release, install locally
 ```
 
-The script refuses to publish from a dirty or out-of-date `main`, with failing tests, or without notarization. Details: [ADR 0008](docs/adr/0008-distribution.md).
+The script refuses to publish from a dirty or out-of-date `main`, with failing tests, without notarization, or without the Sparkle key. It signs the DMG for Sparkle, adds it to [`appcast.xml`](appcast.xml), pushes the tag, publishes the release, and only then pushes `main` — which is what makes the update visible to installed copies. Details: [ADR 0008](docs/adr/0008-distribution.md), [ADR 0009](docs/adr/0009-sparkle-updates.md).

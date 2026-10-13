@@ -69,6 +69,7 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - NSApplicationDelegate
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Updater.shared.start()
         bar = MenuBarController(engine: engine)
         let toaster = Toaster(engine: engine)
         self.toaster = toaster
