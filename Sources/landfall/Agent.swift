@@ -75,8 +75,20 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let e = engine
 
         e.onSettled = { id, url, _ in
-            guard e.config.toasts, let m = e.toastModel(for: url, itemId: id, editorLookup: editorInstalled) else { return }
-            toaster.enqueue(m)
+            guard e.config.toasts else { return }
+            // With Smart Filing on, read the file first so the toast shows Claude's pick.
+            if e.smartFilingReady, var f = Inspector.full(url) {
+                e.enrich(&f)
+                if let rules = e.locate(url.path).map({ Classifier(config: e.config).classify(f, root: $0.root) }),
+                   e.smartFilingApplies(f, rules) {
+                    Task { @MainActor in
+                        _ = await e.smartFile(id, facts: f, rulesDecision: rules)
+                        if let m = e.toastModel(for: url, itemId: id, editorLookup: editorInstalled) { toaster.enqueue(m) }
+                    }
+                    return
+                }
+            }
+            if let m = e.toastModel(for: url, itemId: id, editorLookup: editorInstalled) { toaster.enqueue(m) }
         }
         e.onAutoAction = { it in
             guard e.config.toasts else { return }

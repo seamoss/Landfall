@@ -124,7 +124,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         let held = e.ledger.items(statuses: ["held"]).filter { fileExists($0.path) && $0.decision?.rule == "fallback" }
         if !held.isEmpty && Keychain.apiKey() != nil {
-            let ask = ActionItem("Ask Claude About Unplaced Items", symbol: "sparkles") {
+            let ask = ActionItem("Smart File Unplaced Items", symbol: "sparkles") {
                 for it in held { Task { @MainActor in _ = try? await e.askAI(it.id) } }
             }
             ask.badge = NSMenuItemBadge(count: held.count)

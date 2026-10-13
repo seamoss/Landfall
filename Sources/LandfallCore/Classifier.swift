@@ -86,7 +86,7 @@ public struct Classifier {
     static let fontExts: Set<String> = ["woff2", "woff", "ttf", "otf", "ttc", "eot"]
     static let audioExts: Set<String> = ["mp3", "wav", "aif", "aiff", "flac", "m4a", "alac", "ogg", "als", "logicx", "ptx"]
     static let videoExts: Set<String> = ["mp4", "mov", "m4v", "avi", "mkv", "webm"]
-    static let imageExts: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "svg", "tiff"]
+    public static let imageExts: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "svg", "tiff"]
     static let designExts: Set<String> = ["psd", "ai", "fig", "sketch", "xd"]
     static let makerExts: Set<String> = ["stl", "3mf", "obj", "gcode", "step", "stp", "f3d", "scad"]
     static let dataExts: Set<String> = ["csv", "tsv", "xlsx", "xls", "numbers", "parquet", "json", "sqlite", "db"]

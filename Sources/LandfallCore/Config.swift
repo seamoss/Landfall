@@ -170,9 +170,21 @@ public struct Folders: Codable, Equatable {
     public init() {}
 }
 
+/// Smart Filing: an opt-in, bring-your-own-key add-on that reads what's inside a file and picks its home.
 public struct AIConfig: Codable, Equatable {
-    /// Ask Claude automatically about items with no confident home.
-    public var auto: Bool = false
+    public enum Scope: String, Codable, CaseIterable {
+        /// Only items Landfall's own rules aren't confident about.
+        case unsure
+        /// Every document with readable text (rules for secrets, duplicates, installers etc. still win).
+        case documents
+    }
+
+    public var enabled: Bool = false
+    public var scope: Scope = .unsure
+    /// Off: Smart Filing's picks are suggestions. On: confident picks file like any other decision.
+    public var autoFile: Bool = false
+    /// How much of the file's text is sent.
+    public var excerptChars: Int = 1500
     public var model: String = "claude-haiku-5-5"
 
     public init() {}

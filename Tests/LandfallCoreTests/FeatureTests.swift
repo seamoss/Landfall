@@ -210,3 +210,83 @@ final class FeatureTests: XCTestCase {
         XCTAssertTrue(e.expireStale().isEmpty)
     }
 }
+
+final class SmartFilingTests: XCTestCase {
+    var s: Sandbox!
+
+    override func setUpWithError() throws {
+        s = try Sandbox()
+        setenv("ANTHROPIC_API_KEY", "sk-ant-test-key-for-eligibility-only", 1)
+    }
+
+    override func tearDown() { unsetenv("ANTHROPIC_API_KEY") }
+
+    func engine(scope: AIConfig.Scope, enabled: Bool = true) throws -> Engine {
+        s.config.ai.enabled = enabled
+        s.config.ai.scope = scope
+        return try s.engine()
+    }
+
+    func facts(_ name: String, _ text: String, in dir: URL? = nil) throws -> ItemFacts {
+        Inspector.full(try s.write(dir ?? s.downloads, name, text))!
+    }
+
+    func testOffByDefault() throws {
+        XCTAssertFalse(Config.standard.ai.enabled)
+        let e = try engine(scope: .documents, enabled: false)
+        let f = try facts("memo.txt", "Quarterly plan for the lender portal")
+        XCTAssertFalse(e.smartFilingApplies(f, Classifier(config: s.config).classify(f, root: s.config.roots[0])))
+    }
+
+    func testUnsureScopeOnlyReadsUnplacedItems() throws {
+        let e = try engine(scope: .unsure)
+        let unsure = try facts("notes about lunch.txt", "tacos and a plan")
+        let sure = try facts("Product Call.txt", tactiqHeader)
+        let c = Classifier(config: s.config)
+        XCTAssertTrue(e.smartFilingApplies(unsure, c.classify(unsure, root: s.config.roots[0])))
+        XCTAssertFalse(e.smartFilingApplies(sure, c.classify(sure, root: s.config.roots[0])))
+    }
+
+    func testDocumentsScopeReadsConfidentDocumentsToo() throws {
+        let e = try engine(scope: .documents)
+        let sure = try facts("Product Call.txt", tactiqHeader)
+        XCTAssertTrue(e.smartFilingApplies(sure, Classifier(config: s.config).classify(sure, root: s.config.roots[0])))
+    }
+
+    func testFirmRulesAlwaysWin() throws {
+        let e = try engine(scope: .documents)
+        let c = Classifier(config: s.config)
+        for (name, text) in [("client_secret_1.json", #"{"client_secret":"x"}"#), ("Untitled.md", "x"),
+                             ("Screenshot 2026-10-13 at 10.14.43.png", "png"), ("Jo.vcf", "BEGIN:VCARD")] {
+            let f = try facts(name, text)
+            XCTAssertFalse(e.smartFilingApplies(f, c.classify(f, root: s.config.roots[0])), name)
+        }
+        s.config.rules = [RuleConfig(name: "Mine", nameRegex: "lunch", to: "Personal")]
+        let e2 = try s.engine()
+        let f = try facts("notes about lunch.txt", "tacos")
+        XCTAssertFalse(e2.smartFilingApplies(f, Classifier(config: s.config).classify(f, root: s.config.roots[0])), "your rules win")
+    }
+
+    func testSuggestionsStayBelowAutoUnlessAllowed() throws {
+        let f = try facts("manual.pdf", "x")
+        let suggestion = try AIAdvisor.validated(folder: "Personal", rename: "", confidence: 0.99, reason: "", f: f, config: s.config)
+        XCTAssertLessThan(suggestion.confidence, s.config.autoThreshold)
+        let allowed = try AIAdvisor.validated(folder: "Personal", rename: "", confidence: 0.99, reason: "", f: f,
+                                              config: s.config, ceiling: AIAdvisor.autoCeiling)
+        XCTAssertGreaterThanOrEqual(allowed.confidence, s.config.autoThreshold)
+    }
+
+    func testPromptCarriesClientAliasesButNotPeople() throws {
+        let p = AIAdvisor.prompt(for: try facts("memo.txt", "hello"), config: s.config)
+        XCTAssertTrue(p.contains("Acme [Clients/Acme], also called Roadrunner"))
+        XCTAssertFalse(p.contains("Jordan Patel"))
+    }
+
+    func testExcerptLengthIsConfigurable() throws {
+        s.config.ai.excerptChars = 4000
+        let long = String(repeating: "word ", count: 3000)
+        let p = AIAdvisor.prompt(for: try facts("essay.txt", long), config: s.config)
+        XCTAssertGreaterThan(p.count, 4000)
+        XCTAssertLessThan(p.count, 6500)
+    }
+}

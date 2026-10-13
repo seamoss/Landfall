@@ -365,7 +365,7 @@ public enum ActionPlanner {
             }
         }
         if decision?.rule == "fallback", AIAdvisor.blockReason(f, decision: decision) == nil {
-            a.append(FileAction(.askAI, "Ask Claude"))
+            a.append(FileAction(.askAI, "Smart File"))
         }
         a.append(FileAction(.keep, "Keep here"))
         if !a.contains(where: { $0.kind == .reveal }) { a.append(FileAction(.reveal, "Show in Finder")) }

@@ -14,6 +14,7 @@ final class SettingsModel: ObservableObject {
     @Published var calendarAccess = EKEventStore.authorizationStatus(for: .event) == .fullAccess
     @Published var notificationsAllowed: Bool?
     @Published var folderAccess: [String: Bool] = [:]
+    @Published var smartCalls = 0
     weak var agent: Agent?
     private var pendingSave: DispatchWorkItem?
     private var loading = true
@@ -54,7 +55,51 @@ final class SettingsModel: ObservableObject {
         loginItem = SMAppService.mainApp.status == .enabled
     }
 
+    /// Pick a file, see exactly what would be sent, then optionally ask Claude.
+    func tryOnFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.message = "Choose a file to see what Smart Filing would send and where it would go."
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url, var f = Inspector.full(url) else { return }
+        if Classifier.imageExts.contains(f.ext) { f.ocrText = OCR.text(url) }
+        let config = self.config
+        let alert = NSAlert()
+        if let why = AIAdvisor.blockReason(f, decision: nil) {
+            alert.messageText = "Smart Filing won't send this file"
+            alert.informativeText = "It \(why). Landfall keeps files like this to its own rules."
+            alert.runModal()
+            return
+        }
+        alert.messageText = "This is what would be sent for \(url.lastPathComponent)"
+        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 520, height: 260))
+        text.string = AIAdvisor.prompt(for: f, config: config)
+        text.isEditable = false
+        text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        let scroll = NSScrollView(frame: text.frame)
+        scroll.documentView = text
+        scroll.hasVerticalScroller = true
+        alert.accessoryView = scroll
+        alert.addButton(withTitle: "Ask Claude")
+        alert.addButton(withTitle: "Close")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task { @MainActor in
+            let result = NSAlert()
+            do {
+                let d = try await AIAdvisor.suggest(f, decision: nil, config: config)
+                result.messageText = "Smart Filing would put it in " + (d.destination.map { Paths.pretty($0) } ?? "?")
+                result.informativeText = d.reason + (d.newName.map { "\nRenamed to “\($0)”." } ?? "")
+                    + "\nConfidence \(Int(d.confidence * 100))%. Nothing was moved."
+            } catch {
+                result.messageText = "Smart Filing couldn't answer"
+                result.informativeText = "\(error)"
+            }
+            result.runModal()
+        }
+    }
+
     func refreshPermissions() {
+        smartCalls = agent?.engine.smartCallsThisMonth ?? 0
         loginItem = SMAppService.mainApp.status == .enabled
         calendarAccess = EKEventStore.authorizationStatus(for: .event) == .fullAccess
         hasAPIKey = Keychain.apiKey() != nil
@@ -101,7 +146,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
         tabs.addTabViewItem(pane("General", "gearshape", GeneralTab(model: model)))
         tabs.addTabViewItem(pane("Folders", "folder", FoldersTab(model: model)))
-        tabs.addTabViewItem(pane("Clients", "person.2", ClientsTab(model: model)))
+        tabs.addTabViewItem(pane("Smart Filing", "sparkles", SmartFilingTab(model: model)))
         tabs.addTabViewItem(pane("Rules", "list.bullet.rectangle", RulesTab(model: model)))
 
         let window = NSWindow(contentViewController: tabs)
@@ -194,23 +239,6 @@ struct GeneralTab: View {
                 Toggle(isOn: $model.config.useCalendar) {
                     Text("Use my calendar")
                     Text("The meeting you're in when a file arrives helps pick its client. Nothing leaves your Mac.")
-                }
-            }
-
-            Section("Claude") {
-                Toggle(isOn: $model.config.ai.auto) {
-                    Text("Ask Claude about files with no home")
-                    Text("Sends only the name, type, origin and a 1,500-character excerpt. Never credentials or anything private. Answers are always suggestions.")
-                }
-                TextField("Model", text: $model.config.ai.model)
-                LabeledContent("API key") {
-                    HStack {
-                        SecureField(model.hasAPIKey ? "Saved in your keychain" : "sk-ant-…", text: $model.apiKeyDraft)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 260)
-                        Button(model.apiKeyDraft.isEmpty && model.hasAPIKey ? "Remove" : "Save") { model.saveKey() }
-                            .disabled(model.apiKeyDraft.isEmpty && !model.hasAPIKey)
-                    }
                 }
             }
 
@@ -341,34 +369,115 @@ struct FoldersTab: View {
 
 struct EditIndex: Identifiable { let id: Int }
 
-struct ClientsTab: View {
+/// Smart Filing: bring-your-own-key Claude that files by what's inside, plus the clients it (and the rules) know.
+struct SmartFilingTab: View {
     @ObservedObject var model: SettingsModel
     @State private var editing: EditIndex?
 
-    func summary(_ c: ClientConfig) -> String {
-        var parts: [String] = []
-        if !c.people.isEmpty { parts.append("\(c.people.count) \(c.people.count == 1 ? "person" : "people")") }
-        if !c.aliases.isEmpty { parts.append("also “\(c.aliases.prefix(2).joined(separator: "”, “"))”") }
-        if !c.domains.isEmpty { parts.append(c.domains.joined(separator: ", ")) }
-        return ([c.folderPath] + parts).joined(separator: " · ")
-    }
+    static let models: [(id: String, name: String, note: String)] = [
+        ("claude-haiku-5-5", "Claude Haiku 5.5", "Fastest, lowest cost"),
+        ("claude-sonnet-5-5", "Claude Sonnet 5.5", "Better with long or ambiguous documents"),
+        ("claude-opus-5-5", "Claude Opus 5.5", "Most capable, highest cost"),
+    ]
 
     var body: some View {
         Form {
+            Section {
+                Toggle(isOn: $model.config.ai.enabled) {
+                    Label {
+                        Text("Smart Filing")
+                        Text("Reads what's inside a file and picks the right folder or client. Uses your own Anthropic API key; you pay Anthropic directly.")
+                    } icon: {
+                        Image(systemName: "sparkles").foregroundStyle(.purple)
+                    }
+                }
+                .disabled(!model.hasAPIKey && !model.config.ai.enabled)
+                if !model.hasAPIKey {
+                    Label("Add an API key below to turn it on.", systemImage: "key")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Anthropic API Key") {
+                LabeledContent("API key") {
+                    HStack {
+                        SecureField("API key", text: $model.apiKeyDraft,
+                                    prompt: Text(model.hasAPIKey ? "Saved in your keychain" : "sk-ant-…"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 240)
+                        Button(model.apiKeyDraft.isEmpty && model.hasAPIKey ? "Remove" : "Save") { model.saveKey() }
+                            .disabled(model.apiKeyDraft.isEmpty && !model.hasAPIKey)
+                    }
+                }
+                Picker("Model", selection: $model.config.ai.model) {
+                    ForEach(Self.models, id: \.id) { m in
+                        Text("\(m.name) — \(m.note)").tag(m.id)
+                    }
+                    if !Self.models.contains(where: { $0.id == model.config.ai.model }) {
+                        Text(model.config.ai.model).tag(model.config.ai.model)
+                    }
+                }
+                LabeledContent("This month", value: "\(model.smartCalls) file\(model.smartCalls == 1 ? "" : "s") read")
+                HStack {
+                    Link("Get a key at console.anthropic.com", destination: URL(string: "https://console.anthropic.com/settings/keys")!)
+                        .font(.callout)
+                    Spacer()
+                }
+            }
+
+            Section("When to Use It") {
+                Picker("Read", selection: $model.config.ai.scope) {
+                    Text("Only files Landfall isn't sure about").tag(AIConfig.Scope.unsure)
+                    Text("Every document with readable text").tag(AIConfig.Scope.documents)
+                }
+                Toggle(isOn: $model.config.ai.autoFile) {
+                    Text("Let Smart Filing file on its own")
+                    Text("Off: its picks are suggestions you confirm. On: confident picks file like any other decision, with the toast countdown.")
+                }
+                Text("Your rules, and Landfall's rules for secrets, duplicates, installers, screenshots and code, always come first.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .disabled(!model.config.ai.enabled)
+
+            Section("Privacy") {
+                Picker("Text sent per file", selection: $model.config.ai.excerptChars) {
+                    Text("1,500 characters").tag(1500)
+                    Text("4,000 characters").tag(4000)
+                    Text("8,000 characters").tag(8000)
+                    if ![1500, 4000, 8000].contains(model.config.ai.excerptChars) {
+                        Text("\(model.config.ai.excerptChars) characters").tag(model.config.ai.excerptChars)
+                    }
+                }
+                LabeledContent("Also sent") {
+                    Text("File name, type, size, download site, your folder names, client names and aliases")
+                        .multilineTextAlignment(.trailing).foregroundStyle(.secondary)
+                }
+                LabeledContent("Never sent") {
+                    Text("Credentials and anything that looks like a secret, résumés and contact cards, people's names from your client list")
+                        .multilineTextAlignment(.trailing).foregroundStyle(.secondary)
+                }
+                HStack {
+                    Spacer()
+                    Button("Try on a File…") { model.tryOnFile() }
+                        .disabled(!model.hasAPIKey)
+                }
+            }
+
             Section {
                 ForEach(model.config.clients.indices, id: \.self) { i in
                     LabeledContent {
                         Button("Details…") { editing = EditIndex(id: i) }
                     } label: {
                         Text(model.config.clients[i].name)
-                        Text(summary(model.config.clients[i]))
+                        Text(Self.summary(model.config.clients[i]))
                     }
                 }
             } header: {
-                Text("Clients")
+                Text("Clients & Projects")
             } footer: {
                 HStack {
-                    Text("Files mentioning a client, from their people, sites or meetings, go to the client's folder.")
+                    Text("Used by Smart Filing and by Landfall's own rules: names, aliases, people, sites and meetings.")
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button("Add Client…") {
@@ -386,6 +495,14 @@ struct ClientsTab: View {
                              onDone: { editing = nil })
             }
         }
+    }
+
+    static func summary(_ c: ClientConfig) -> String {
+        var parts: [String] = []
+        if !c.people.isEmpty { parts.append("\(c.people.count) \(c.people.count == 1 ? "person" : "people")") }
+        if !c.aliases.isEmpty { parts.append("also “\(c.aliases.prefix(2).joined(separator: "”, “"))”") }
+        if !c.domains.isEmpty { parts.append(c.domains.joined(separator: ", ")) }
+        return ([c.folderPath] + parts).joined(separator: " · ")
     }
 }
 
@@ -558,7 +675,7 @@ func snapshotSettings(tab: Int, to url: URL) throws {
     let model = SettingsModel(agent: nil)
     let size = SettingsWindowController.size
     let views: [AnyView] = [AnyView(GeneralTab(model: model)), AnyView(FoldersTab(model: model)),
-                            AnyView(ClientsTab(model: model)), AnyView(RulesTab(model: model))]
+                            AnyView(SmartFilingTab(model: model)), AnyView(RulesTab(model: model))]
     let host = NSHostingView(rootView: views[min(tab, 3)].frame(width: size.width, height: size.height))
     host.frame = NSRect(origin: .zero, size: size)
     let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)

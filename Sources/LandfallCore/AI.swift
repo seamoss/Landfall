@@ -4,8 +4,9 @@ import Security
 /// Asks Claude where a file belongs. Sends metadata and a short excerpt only — never anything
 /// flagged sensitive/noAI, never credentials — and its answers are always proposals.
 public enum AIAdvisor {
-    public static let maxConfidence = 0.8  // below the auto threshold: you always approve
-    static let excerptChars = 1500
+    /// Without "may file on its own", answers stay below the auto threshold: you always approve.
+    public static let suggestionCeiling = 0.8
+    public static let autoCeiling = 0.92
 
     public enum Refusal: Error, CustomStringConvertible {
         case notAllowed(String), noKey, api(String)
@@ -36,11 +37,21 @@ public enum AIAdvisor {
         ]
         if let host = f.origins.lazy.compactMap(Trust.host).first { lines.append("Downloaded from: \(host)") }
         if let t = f.title { lines.append("Title: \(t)") }
+        let limit = max(200, config.ai.excerptChars)
         if let text = f.textHead?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
-            lines.append("Excerpt:\n\"\"\"\n\(text.prefix(excerptChars))\n\"\"\"")
+            lines.append("Excerpt:\n\"\"\"\n\(text.prefix(limit))\n\"\"\"")
+        } else if let text = f.ocrText?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            lines.append("Text in the image:\n\"\"\"\n\(text.prefix(limit))\n\"\"\"")
         }
+        if let m = f.meetings.first { lines.append("Arrived during the meeting: \(m.title)") }
         lines.append("\nExisting folders (library-relative):\n" + libraryFolders(config).map { "- \($0)" }.joined(separator: "\n"))
-        lines.append("\nClients: " + config.clients.map(\.name).joined(separator: ", "))
+        // Clients with their aliases and domains (not people's names) so content can be matched to them.
+        lines.append("\nClients and projects (folder in brackets):\n" + config.clients.map { c in
+            var s = "- \(c.name) [\(c.folderPath)]"
+            if !c.aliases.isEmpty { s += ", also called " + c.aliases.joined(separator: ", ") }
+            if !c.domains.isEmpty { s += ", domains " + c.domains.joined(separator: ", ") }
+            return s
+        }.joined(separator: "\n"))
         return lines.joined(separator: "\n")
     }
 
@@ -98,13 +109,14 @@ public enum AIAdvisor {
             throw Refusal.api("Claude's answer wasn't valid JSON")
         }
         return try validated(folder: folder, rename: out["rename"] as? String ?? "",
-                            confidence: out["confidence"] as? Double ?? 0.5,
-                            reason: out["reason"] as? String ?? "", f: f, config: config)
+                             confidence: out["confidence"] as? Double ?? 0.5,
+                             reason: out["reason"] as? String ?? "", f: f, config: config,
+                             ceiling: config.ai.autoFile ? autoCeiling : suggestionCeiling)
     }
 
     /// Validate the model's answer before it becomes a proposal.
     static func validated(folder: String, rename: String, confidence: Double, reason: String,
-                         f: ItemFacts, config: Config) throws -> Decision {
+                          f: ItemFacts, config: Config, ceiling: Double = suggestionCeiling) throws -> Decision {
         let rel = folder.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
         let parts = rel.split(separator: "/").map(String.init)
         guard !rel.isEmpty, !parts.contains(".."), !parts.contains("."), !folder.hasPrefix("~"),
@@ -117,7 +129,7 @@ public enum AIAdvisor {
             newName = f.url.pathExtension.isEmpty || r.hasSuffix("." + f.url.pathExtension) ? r : r + "." + f.url.pathExtension
         }
         return Decision(action: .move, destination: config.libraryURL.appendingPathComponent(rel).path, newName: newName,
-                        confidence: min(max(confidence, 0), maxConfidence), rule: "ai",
+                        confidence: min(max(confidence, 0), ceiling), rule: "ai",
                         reason: "Claude: " + reason, flags: [])
     }
 

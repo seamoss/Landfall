@@ -12,6 +12,9 @@ public final class Engine: ClassifierContext {
     public var clock: () -> Date = Date.init
     /// Paths that shouldn't announce themselves (e.g. a folder Landfall just unzipped).
     public var quiet: Set<String> = []
+    /// Smart Filing answers for items still in flight, by item id.
+    var smartDecisions: [Int64: Decision] = [:]
+    var smartInFlight: Set<Int64> = []
     /// Calendar access (app only).
     public weak var meetingProvider: MeetingProvider?
     /// You've corrected the same kind of filing twice; here's a rule for it.
@@ -220,10 +223,23 @@ public final class Engine: ClassifierContext {
                                "inode": Int64(f.inode)])
         let d = classifier.classify(f, root: root)
         indexContent(itemId, f, d)
-        decide(itemId, path: normalize(url.path), d)
-        if d.rule == "fallback" && config.ai.auto && AIAdvisor.blockReason(f, decision: d) == nil && Keychain.apiKey() != nil {
-            Task { @MainActor in _ = try? await self.askAI(itemId) }
+        let path = normalize(url.path)
+        if smartFilingApplies(f, d) {
+            if let smart = smartDecisions.removeValue(forKey: itemId) {
+                decide(itemId, path: path, smart)
+                return smart
+            }
+            // Ask first; the rules' answer is the fallback if Claude can't help.
+            guard !smartInFlight.contains(itemId) else { return d }
+            Task { @MainActor in
+                let smart = await self.smartFile(itemId, facts: f, rulesDecision: d)
+                guard fileExists(path) else { return }
+                self.decide(itemId, path: path, smart ?? d)
+                self.smartDecisions[itemId] = nil
+            }
+            return d
         }
+        decide(itemId, path: path, d)
         return d
     }
 
@@ -375,6 +391,62 @@ public final class Engine: ClassifierContext {
         }
     }
 
+    // MARK: - Smart Filing
+
+    /// Rules that always win over Smart Filing: safety, housekeeping, and your own rules.
+    static let firmRules: Set<String> = ["credential", "duplicate", "archive-twin", "junk", "installer", "screenshot",
+                                         "dev-capture", "stale-capture", "code", "font", "expired", "contact", "resume"]
+
+    public var smartFilingReady: Bool { config.ai.enabled && Keychain.apiKey() != nil }
+
+    /// Should Claude read this one?
+    public func smartFilingApplies(_ f: ItemFacts, _ d: Decision) -> Bool {
+        guard smartFilingReady, !f.isDir, d.action != .ignore, d.action != .trash,
+              !Self.firmRules.contains(d.rule), !d.rule.hasPrefix("rule:"),
+              AIAdvisor.blockReason(f, decision: d) == nil else { return false }
+        let hasText = !(f.textHead ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !(f.ocrText ?? "").isEmpty
+        switch config.ai.scope {
+        case .documents: return hasText || d.rule == "fallback"
+        case .unsure: return d.rule == "fallback" || d.confidence < config.autoThreshold
+        }
+    }
+
+    /// Ask Claude for this item's home; nil if it can't help. The answer is kept for the toast and for filing.
+    @discardableResult
+    public func smartFile(_ id: Int64, facts: ItemFacts? = nil, rulesDecision: Decision? = nil) async -> Decision? {
+        if let cached = smartDecisions[id] { return cached }
+        guard let it = ledger.item(id), fileExists(it.path) else { return nil }
+        var f: ItemFacts
+        if let facts { f = facts } else {
+            guard let full = Inspector.full(URL(fileURLWithPath: it.path)) else { return nil }
+            f = full
+            enrich(&f, firstSeen: it.firstSeen)
+        }
+        smartInFlight.insert(id)
+        defer { smartInFlight.remove(id) }
+        do {
+            var d = try await AIAdvisor.suggest(f, decision: rulesDecision ?? it.decision, config: config)
+            if let root = locate(it.path)?.root { d = classifier.localize(d, f, root) }
+            if d.newName == nil, let rename = Renamer.suggest(f) { d.newName = rename }
+            smartDecisions[id] = d
+            countSmartCall()
+            Log.info("smart filing: \(it.name) → \(d.destination ?? "?") (\(d.confidence))")
+            return d
+        } catch {
+            Log.warn("smart filing skipped \(it.name): \(error)")
+            return nil
+        }
+    }
+
+    /// Calls this month, for keeping an eye on your API spend.
+    public var smartCallsThisMonth: Int { Int(ledger.meta("ai-calls-" + formatDate(clock(), "yyyy-MM")) ?? "0") ?? 0 }
+
+    func countSmartCall() {
+        let key = "ai-calls-" + formatDate(clock(), "yyyy-MM")
+        ledger.setMeta(key, String(smartCallsThisMonth + 1))
+    }
+
     /// Ask Claude where something belongs; the answer becomes a proposal you approve.
     @discardableResult
     public func askAI(_ id: Int64) async throws -> Decision {
@@ -383,6 +455,7 @@ public final class Engine: ClassifierContext {
         enrich(&f, firstSeen: it.firstSeen)
         var d = try await AIAdvisor.suggest(f, decision: it.decision, config: config)
         if let root = locate(it.path)?.root { d = classifier.localize(d, f, root) }
+        countSmartCall()
         await MainActor.run {
             ledger.update(id, ["status": "proposed", "decision": d.json])
             ledger.addEvent(id, "proposed", src: it.path, dst: d.target(for: it.name), rule: d.rule,
@@ -462,6 +535,7 @@ public final class Engine: ClassifierContext {
         guard var f = Inspector.full(URL(fileURLWithPath: it.path)) else { throw LandfallError.action("can't read \(it.name)") }
         enrich(&f, firstSeen: it.firstSeen)
         var d = classifier.classify(f, root: loc.root)
+        if let smart = smartDecisions.removeValue(forKey: id), smartFilingApplies(f, d) { d = smart }
         if d.action == .hold, let prior = it.decision, prior.action == .move || prior.action == .trash { d = prior }
         guard d.action == .move || d.action == .trash else {
             throw LandfallError.action("no confident home for \(it.name) — file it by hand")
@@ -475,13 +549,15 @@ public final class Engine: ClassifierContext {
         guard var f = Inspector.full(url) else { return nil }
         enrich(&f, firstSeen: itemId.flatMap { ledger.item($0)?.firstSeen })
         let root = locate(url.path)?.root
-        let d = root.map { classifier.classify(f, root: $0) }
+        var d = root.map { classifier.classify(f, root: $0) }
+        if let id = itemId, let smart = smartDecisions[id], let rules = d, smartFilingApplies(f, rules) { d = smart }
         guard d?.action != .ignore else { return nil }
         let kind = FileKind.detect(f, decision: d)
         let trust = Trust.assess(f, kind: kind)
         let editor = Editor.installed(lookup: editorLookup)
         var actions = ActionPlanner.plan(f, kind: kind, trust: trust, decision: d, config: config, editor: editor)
         if itemId == nil { actions.removeAll { $0.kind == .fileNow || $0.kind == .keep } }
+        if Keychain.apiKey() == nil { actions.removeAll { $0.kind == .askAI } }  // Smart Filing needs your key
         let from = trust.originHost.map { " · from \($0)" } ?? ""
         var m = ToastModel(itemId: itemId, url: url, name: f.name, kind: kind,
                            subtitle: "\(kind.label) · \(formatBytes(f.size))\(from)", trust: trust,

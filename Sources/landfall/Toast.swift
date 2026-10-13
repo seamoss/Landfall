@@ -404,10 +404,14 @@ final class Toast: NSObject {
                                      m.trust.level == .trusted ? .secondaryLabelColor : trustColor(m.trust.level)))
         }
         if let dest = m.destinationLabel {
-            let d = symbolLabel(m.isReceipt ? "checkmark.circle.fill" : "arrow.turn.down.right", dest, .labelColor,
-                                weight: .medium, symbolColor: m.isReceipt ? .systemGreen : .secondaryLabelColor)
+            let smart = m.decision?.rule == "ai"
+            let d = symbolLabel(m.isReceipt ? "checkmark.circle.fill" : smart ? "sparkles" : "arrow.turn.down.right", dest, .labelColor,
+                                weight: .medium, symbolColor: m.isReceipt ? .systemGreen : smart ? .systemPurple : .secondaryLabelColor)
             d.toolTip = m.suggestion
             lines.append(d)
+            if smart, !m.isReceipt, let why = m.suggestion {
+                lines.append(label(why, .secondaryLabelColor, lines: 2))
+            }
         } else if let s = m.suggestion {
             lines.append(label(s, .labelColor, lines: 2))
         }
