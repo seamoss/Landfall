@@ -1,123 +1,184 @@
+<p align="center"><img src="Resources/icon-1024.png" width="128" alt="Landfall icon"></p>
+
 # Landfall
 
-Watches `~/Downloads`, `~/Desktop` and `~/Documents`, files what lands there into the library at `~/Documents`, and remembers where everything went.
+Landfall watches **Downloads**, **Desktop** and **Documents**, works out what each new file is, and files it — into your library at `~/Documents`, or into dated folders right where it landed. Everything it does is recorded, explainable and undoable.
 
-| Folder | Role | Behavior |
-|---|---|---|
-| Downloads | intake | filed 5 min after it settles |
-| Desktop | shelf | filed 2 h after you last opened it |
-| Documents | library | only loose top-level files; folders (incl. `Dev`) are never touched |
+A native macOS menu bar app and command-line tool. macOS 14+, designed for macOS 26. No dependencies.
 
-Native Swift, no dependencies: FSEvents, Spotlight metadata, SQLite ledger, AppKit menu bar.
+[Install](#install) · [How it works](#how-it-works) · [Toasts](#toasts) · [Smart Filing](#smart-filing) · [The menu and Settings](#the-menu-and-settings) · [Command line](#command-line) · [Configuration](#configuration) · [Development](#development) · [Releasing](#releasing) · [Decisions](docs/adr/README.md) · [Changelog](CHANGELOG.md)
 
 ## Install
 
-```bash
-./scripts/package.sh     # universal build, Developer ID signature, DMG (+ notarization if a profile is stored)
-./scripts/install.sh     # /Applications/Landfall.app, `landfall` on PATH, login item, launches
-```
+Download the latest `Landfall-x.y.z.dmg` from [Releases](https://github.com/seamoss/Landfall/releases), open it and drag Landfall to Applications. It's signed with Developer ID and notarized.
 
-Or open `dist/Landfall-<version>.dmg` and drag to Applications. First launch registers the login item, asks for Calendar access and opens Settings; macOS asks once each for Desktop, Documents and Downloads. To notarize for other Macs, store credentials once:
+On first launch Landfall adds itself to login items, opens Settings and asks for Calendar access; macOS asks once each for Desktop, Documents and Downloads. Settings › General › Permissions shows what's granted, with a fix for anything that isn't.
 
-```bash
-xcrun notarytool store-credentials landfall-notary --apple-id <your-apple-id> --team-id 4J2T5H73JM
-```
+From source: `./scripts/package.sh && ./scripts/install.sh` (see [Development](#development)).
 
-then re-run `package.sh`. The icon is drawn by `scripts/make-icon.swift`.
+## How it works
 
-## Where things go
+### Watched folders
 
-Each watched folder chooses (Settings › Folders, or `roots[].filing` in config):
+| Folder | Role | Files after | Goes to |
+|---|---|---|---|
+| Downloads | intake | 5 minutes, once the download settles | the library; untouched items expire to the Trash after 30 days |
+| Desktop | shelf | 2 hours after you last opened it | dated folders on the Desktop, e.g. `Desktop/2026-10-13/` |
+| Documents | library | 30 minutes after last use | the library — loose top-level files only; folders (including `Dev`) are never touched |
 
-- **The library** — `~/Documents/Clients/…`, `Meetings/…`, `Screenshots/…` (Downloads, Documents).
-- **In place** — a cabinet inside the folder itself, e.g. `~/Desktop/2026-10-12/` (`{yyyy-mm-dd}`), or `{yyyy-mm-dd}/{category}`, `{yyyy-mm}`, `{category}`. Cabinet folders are tagged so they're never re-filed. Credentials still go to the library's `_Sensitive`.
+Each folder's role, timing and destination are adjustable in Settings › Folders. Destinations can be the library or a cabinet in place, organized by day, day then type, month, or type ([ADR 0005](docs/adr/0005-per-folder-filing.md)).
 
-## Modes
+### Modes
 
-- **shadow** (default): record and propose, never touch files.
-- **review**: same, but intended for `landfall apply` / the menu bar "Needs a decision" list.
-- **auto**: moves at confidence ≥ 0.85, trashes at ≥ 0.9; everything else waits for you. Switching modes re-checks what's waiting.
+- **Watch** (`shadow`, the default for new installs): Landfall records what it would do and proposes it; nothing moves unless you click.
+- **Suggest** (`review`): every decision waits for you in the menu bar.
+- **Auto**: confident decisions happen on their own — moves at ≥ 85% confidence, trashing at ≥ 90%. The rest wait for you.
 
-Every action goes through the macOS Trash or a move, both logged and reversible with `landfall undo`. An undone or dragged-back item is marked *kept* and never re-filed.
+"Remove" always means the macOS Trash, every action can be undone, and anything you undo or drag back is left alone for good ([ADR 0003](docs/adr/0003-safety-model.md)).
 
-## What it knows (in order)
+### What it recognizes
 
-1. **Ignore** dotfiles, partial downloads, Finder tag `Keep`, `neverTouch`, library folders.
-2. **Credentials** (`.p12/.pem/.env`, `client_secret*.json`, private keys, API tokens, backup codes) → `_Sensitive`, notification, never sent to any model.
-3. **Your rules** from `config.json`.
-4. **Duplicates**: same hash as a tracked file, or an identical browser `name (2).ext`.
-5. **Archive twins**: a `.zip` whose contents are already unzipped beside it.
-6. **Junk**: empty / near-empty `Untitled*`.
-7. **Installers** (`.dmg/.pkg`): trashed a day after you've opened them.
-8. **Code**: git repos and projects → `Dev/` (held if dirty or name collides).
-9. **Meeting transcripts** (Tactiq): client from participants/title → `Meetings/<Client>/YYYY-MM/`, renamed `YYYY-MM-DD Title.txt`.
-10. **Screenshots** → `Screenshots/YYYY-MM`; `127.0.0.1_PORT_*` captures → `Screenshots/Dev Captures/port-N`.
-11. **Fonts**, **résumés** (yours → `Personal`; others → `Personal/Hiring`, flagged), **contacts**, **3D/CAD**, **contracts** (→ `Clients/<X>/Contracts`), **audio/video**.
-12. **Client match** on name, title, content, participants and download domain → `Clients/<X>` (data files → `Data/`).
-13. **Images**, then **hold** for anything without a confident home.
+Checked in this order; the first match decides ([ADR 0004](docs/adr/0004-ordered-deterministic-rules.md)):
 
-## Tracking
+1. **Ignored:** hidden files, partial downloads, anything tagged *Keep* in Finder, folders you exclude.
+2. **Credentials** — `.p12`, `.pem`, `.env`, `client_secret*.json`, private keys, API tokens, recovery codes → `_Sensitive`, with an alert and an offer to import into 1Password.
+3. **Your rules.**
+4. **Duplicates** of files Landfall already tracks, and identical browser copies (`name (2).pdf`) → Trash.
+5. **Zips already unzipped** beside themselves → Trash. **Near-empty `Untitled` files** → Trash.
+6. **Installers** → Trash a day after you've opened them.
+7. **Code** (git repos, projects) → `Dev/`, unless uncommitted or the name is taken.
+8. **Meeting transcripts** (Tactiq) → `Meetings/<Client>/YYYY-MM/`, renamed `YYYY-MM-DD Title.txt`.
+9. **Screenshots** → `Screenshots/YYYY-MM/`; localhost browser captures → `Screenshots/Dev Captures/port-N/`, older captures of the same page proposed for the Trash.
+10. **Fonts, résumés** (yours → `Personal`, other people's → `Personal/Hiring`, kept private), **contact cards, 3D/CAD files, contracts, audio, video.**
+11. **Clients** — by name, title, content, meeting participants, download site, or the meeting you were in when it arrived → `Clients/<Client>/`.
+12. **Images**, then anything else stays put until you or Smart Filing decide.
 
-- `landfall recent --since 3d` — the timeline, across all three folders.
-- `landfall where <q>` / `landfall why <q|#id>` — current location, origin URL, verdict and full history. Items are followed by inode and bookmark, so moves you make yourself (Downloads → Desktop → somewhere) stay one item.
-- `~/Desktop/Recent Landings/` — Finder aliases to everything filed in the last 7 days.
-- Daily digest notification after 17:00; `landfall digest` any time.
-- `landfall suggest` — when you re-file the same kind of thing twice, it proposes a rule.
+Along the way it renames sensibly (`Report (2).pdf` → `Report.pdf`, `Another Resu,e.pdf` → `Another Resume.pdf`, hash-named images → a title or date), reads text in screenshots for search, and learns: when you re-file the same kind of thing twice, it offers to make a rule.
+
+### Tracking
+
+Every item is followed from the moment it lands — even when you move it yourself — in a local ledger ([ADR 0002](docs/adr/0002-sqlite-ledger-and-item-identity.md)). The menu shows what landed recently and where it went; `Desktop/Recent Landings` holds aliases to everything filed this week; an evening notification summarizes the day; `landfall why <file>` shows the full history and reasoning for any item.
 
 ## Toasts
 
-When something new finishes landing (live arrivals only, never the startup catalog), a toast slides in top-right with the file's icon, kind, size, origin, a trust line and Landfall's suggestion, plus actions that fit the type:
+When something new finishes landing, a card drops down under the menu bar:
+
+- a thumbnail, the file's kind, size and where it came from;
+- **→ where it's going** (✦ when Smart Filing chose it);
+- a trust line only when there's something to say: downloaded and unsigned, rejected by Gatekeeper, contains macros, contains secrets;
+- **File now · Keep** and the most useful action for the type, with the rest under ⋯;
+- a **countdown**: when it runs out, a confident move of an ordinary file is filed, and the card becomes "Filed → …" with Undo. Hover to pause.
+
+Actions by type:
 
 | Kind | Actions |
 |---|---|
-| PDF / document / transcript | Open · Preview |
-| Image / screenshot | Copy · Preview · Open |
-| Archive | Unzip (refused if any entry escapes the folder) · Preview |
-| Font · `.ics` · `.vcf` | Install font · Add to Calendar · Add to Contacts |
-| Code project / file | Open in Cursor / VS Code / Zed |
-| Disk image | Open disk image |
-| App | Move to Applications · Open (signed + notarized); **Open…** with confirmation (unsigned); nothing (Gatekeeper-rejected) |
-| Installer package | Install… (confirmation unless signed) |
-| Script | **View source** first; Run in Terminal… always confirms, runs visibly with the right interpreter |
-| `.webloc` / `.fileloc` | Open link… confirms and shows the target |
-| Office macro docs | Preview first; Open… warns about macros |
-| Credential | Move to _Sensitive · Open 1Password — never Open/Preview |
-| Configuration profile | nothing but Show in Finder |
+| Documents, PDFs, transcripts | Open · Preview |
+| Images, screenshots | Copy · Preview · Open |
+| Archives | Unzip (refused if any entry would land outside the folder) · Preview |
+| Fonts · calendar invites · contact cards | Install font · Add to Calendar · Add to Contacts |
+| Code | Open in Cursor / VS Code / Zed |
+| Apps | Move to Applications · Open (signed and notarized); Open… with confirmation (unsigned); nothing (rejected by Gatekeeper) |
+| Installers, disk images | Install… / Open disk image (confirmation unless signed) |
+| Scripts | View source first; Run in Terminal… always confirms and runs visibly |
+| `.webloc` / `.fileloc` links | Open link… confirms and shows the target |
+| Office documents with macros | Preview first; Open… warns |
+| Credentials | Import to 1Password… · Move to _Sensitive — never Open or Preview |
+| Configuration profiles | Show in Finder only |
 
-Every toast also has **File to …** (acts now, even in shadow mode — you asked), **Keep here**, and **Show in Finder**. Trust comes from the quarantine flag, the download URL and `spctl` (Gatekeeper). Nothing ever runs without a click; anything that can execute code asks twice. Bursts of 4+ arrivals collapse into one summary toast. When auto mode files something, a "Filed → …" toast offers Undo.
+Nothing runs without a click, and anything that can execute code asks twice. The countdown never trashes and never applies to credentials, apps, scripts, installers or code. Four or more arrivals at once collapse into one card. Details and reasoning: [ADR 0006](docs/adr/0006-custom-toasts-and-countdown.md).
 
-Toasts stay for `toastSeconds` (default 20, paused while hovered); turn them off with `"toasts": false`. Preview one with `landfall toast <file>` or render it with `--snapshot out.png [--dark]`.
+## Smart Filing
 
-## Housekeeping
+An optional add-on that **reads what's inside a file** and picks its folder or client, using **your own Anthropic API key** — you pay Anthropic directly, and nothing is sent until you turn it on ([ADR 0007](docs/adr/0007-smart-filing-byok.md)).
 
-`landfall space [path]` reports rebuildable folders (`node_modules`, `.venv`, `.next`, `.turbo`, cargo `target`) and agent worktrees under `~/Documents/Dev`, with project idle time. `--trash --idle 30 --yes` moves the idle ones to the Trash (worktrees are report-only).
+Settings › Smart Filing:
 
-## Config
+- **API key** (kept in your login keychain) and **model**: Claude Haiku 5.5 (default — fastest, lowest cost), Sonnet 5.5 or Opus 5.5. A counter shows how many files it read this month.
+- **When to use it:** only files Landfall isn't sure about, or every document with readable text. Your rules and the safety rules always come first.
+- **Let Smart Filing file on its own:** off, its picks are suggestions; on, confident picks file like any other decision.
+- **Privacy:** choose how much text is sent (1,500 / 4,000 / 8,000 characters). Also sent: file name, type, size, download site, your folder names, client names and aliases. **Never sent:** credentials or anything that looks like a secret, résumés and contact cards, people's names from your client list. **Try on a File…** shows the exact text before anything is sent.
+- **Clients & Projects:** the names, aliases, people, sites and meetings that both Smart Filing and the built-in rules use.
 
-`~/.config/landfall/config.json` — partial files are fine; missing keys use defaults. The running agent reloads it within 10 s.
+## The menu and Settings
+
+The menu bar glyph shows a count when decisions are waiting. The menu lists what needs a decision (with Apply All), what landed recently and where it went, and tools: Smart File unplaced items, import credentials to 1Password, Scan Now (⌘R), Space Report, Undo Last Action (⌘Z), Mode, Settings… (⌘,).
+
+Settings has four panes; changes apply immediately:
+
+- **General** — mode, permissions, toast and countdown timing (*File after*), notifications, calendar, 1Password vault, weekly disk-space report.
+- **Folders** — each watched folder's role, grace period, expiry and where its items go.
+- **Smart Filing** — see above.
+- **Rules** — your own rules, including ones accepted from Landfall's suggestions.
+
+## Command line
+
+`landfall` is on your PATH after installing. Highlights:
+
+```bash
+landfall recent --since 3d          # what landed, and where it went
+landfall why "Product Call"          # history and reasoning for one item
+landfall where invoice               # find something by name
+landfall search installer portal     # names, document text, text in screenshots
+landfall review                      # decisions waiting for you
+landfall apply --all                 # accept them
+landfall undo                        # reverse the last move or trash
+landfall mode auto                   # shadow | review | auto
+landfall ai --held --dry-run         # what Smart Filing would send for unplaced items
+landfall space --trash --idle 30 --yes   # clear rebuildable folders in idle projects
+```
+
+`landfall help` lists everything. `recent`, `where`, `review` and `search` take `--json`. Raycast script commands and `landfall://` URLs for Shortcuts are in [`extras/raycast`](extras/raycast/README.md).
+
+## Configuration
+
+`~/.config/landfall/config.json`. Settings writes it; you can also edit it by hand — partial files are fine, missing keys use defaults, and the running app reloads it within 10 seconds.
 
 ```json
 {
+  "mode": "auto",
+  "autoFileSeconds": 15,
   "rules": [
     { "name": "Bike manuals", "nameRegex": "(?i)(vulcan|carburetor)", "to": "Personal/Vehicles" },
     { "name": "Globex calls", "participantsAny": ["Jane Doe"], "to": "Meetings/Globex/{yyyy-mm}", "rename": "{date} {title}" }
   ],
-  "clients": [{ "name": "Initech", "people": ["Sam Lee", "Jane Doe"] }]
+  "clients": [{ "name": "Initech", "people": ["Sam Lee", "Jane Doe"], "domains": ["initech.example"] }],
+  "ai": { "enabled": true, "scope": "unsure", "model": "claude-haiku-5-5" }
 }
 ```
 
-Files: ledger `~/Library/Application Support/Landfall/ledger.sqlite`, log `~/Library/Logs/Landfall/landfall.log`, agent `~/Library/LaunchAgents/dev.landfall.agent.plist`.
+| Where | What |
+|---|---|
+| `~/Library/Application Support/Landfall/ledger.sqlite` | items, history, search index |
+| `~/Library/Logs/Landfall/landfall.log` | log; `space-report.txt` beside it |
+| Login keychain, service `dev.landfall` | Anthropic API key |
 
-## Context and learning
+## Development
 
-- **Calendar:** the meeting you were in when a file arrived (title, attendees, attendee email domains) picks the client. Transcripts use their own start time.
-- **OCR + search:** text in screenshots and images is recognized on arrival; `landfall search <words>` (or `landfall reindex`) covers names, document text and image text. Secrets and private items are never indexed.
-- **Renaming:** copy suffixes go (`Report (2).pdf` → `Report.pdf`), punctuation typos are respelled (`Resu,e` → `Resume`), hash names become a title, heading or `Image 2026-10-12 1430`.
-- **Rules from corrections:** move two filed items of a kind to the same folder and a toast offers a rule (shared meeting participant → download site → common name word, plus extension). Add / Not now / Never.
-- **Smart Filing (add-on, bring your own key):** Claude reads what's inside a file and picks the folder or client. Off by default; turn it on in Settings › Smart Filing with your Anthropic API key (stored in the login keychain, or `landfall ai-key`). Choose the model (Haiku 5.5 default, Sonnet 5.5, Opus 5.5), whether it reads only files Landfall isn't sure about or every document with text, how much text is sent (1,500 / 4,000 / 8,000 characters), and whether its picks may file on their own (otherwise they're suggestions). Your rules and the safety rules (secrets, duplicates, installers, screenshots, code, résumés, contacts) always win. Sent: name, type, size, download site, the excerpt (or OCR text), folder names, client names/aliases/domains — never credentials, private files, or people's names. "Try on a File…" shows the exact payload first; a monthly counter tracks usage. Toasts show its pick with ✦ and Claude's reason.
-- **1Password:** "Import to 1Password…" on credential toasts, the menu, or `landfall vault --all` creates a Document item via the `op` CLI (`brew install 1password-cli`, then enable CLI integration in 1Password), then trashes the original.
-- **Housekeeping:** Monday-morning space report toast (Clean idle / Show report); older `localhost` captures of the same page proposed for the Trash; Downloads untouched for 30 days expire to the Trash in auto mode (one "Undo all" toast).
+```bash
+swift build                      # debug build
+swift test                       # core engine, rules, safety, Smart Filing eligibility
+swift run landfall scan          # run the CLI against your real folders (respects mode)
+.build/release/landfall toast <file> --snapshot out.png [--dark]   # render a toast offscreen
+.build/release/landfall settings --snapshot out.png --tab 0        # render a Settings pane
+swift scripts/make-icon.swift icon Resources/Landfall.icon         # regenerate the icon layers
+```
 
-## Shortcuts, Raycast, scripting
+Layout: `Sources/LandfallCore` (engine, classifier, ledger, actions — no UI), `Sources/landfall` (app, menu, toasts, Settings, CLI), `Tests/LandfallCoreTests`, `scripts/`, `docs/adr/`. Why it's built this way: [ADR 0001](docs/adr/0001-native-swift-app-and-cli.md).
 
-`landfall://settings · scan · review · space · file?path= · ask?path= · toast?path=` — see `extras/raycast/README.md`. Raycast script commands ship in `extras/raycast`. `recent`, `where`, `review` and `search` take `--json`.
+## Releasing
+
+One-time setup on the release machine: the Developer ID Application certificate in the keychain, a notary profile, and `gh` signed in:
+
+```bash
+xcrun notarytool store-credentials landfall-notary --apple-id <apple-id> --team-id 4J2T5H73JM
+```
+
+Then add notes under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) and run:
+
+```bash
+./scripts/release.sh 0.5.1 --dry-run   # build, sign and notarize only
+./scripts/release.sh 0.5.1             # …then commit, tag, push, publish the GitHub release, install locally
+```
+
+The script refuses to publish from a dirty or out-of-date `main`, with failing tests, or without notarization. Details: [ADR 0008](docs/adr/0008-distribution.md).

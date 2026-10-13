@@ -8,7 +8,7 @@ landfall — watches Downloads, Desktop and Documents and files what lands there
 
   landfall init [--force]              write the starter config (~/.config/landfall/config.json)
   landfall scan [--root R] [--recheck] classify everything now (respects mode)
-  landfall watch [--menubar]           run the watcher (what the login agent runs)
+  landfall watch [--menubar]           run the watcher in the foreground (the app does this at login)
   landfall recent [--since 7d] [--root R]
   landfall where <query>               where did that file go?
   landfall why <query|#id>             the full history and reasoning for one item
