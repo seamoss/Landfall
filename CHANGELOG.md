@@ -5,6 +5,12 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+### Fixed
+- The Settings window title now follows the selected tab.
+
+### Changed
+- The About window shows just the version, copyright and project link.
+
 ## [0.6.2] - 2026-10-13
 
 ### Added

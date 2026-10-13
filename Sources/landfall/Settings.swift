@@ -126,6 +126,19 @@ func openPrivacy(_ anchor: String) {
     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!)
 }
 
+/// Toolbar tabs that title the window after the selected pane, like System Settings-era preference windows.
+final class SettingsTabs: NSTabViewController {
+    override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
+        super.tabView(tabView, didSelect: tabViewItem)
+        if let label = tabViewItem?.label { view.window?.title = label }
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        if let label = tabView.selectedTabViewItem?.label { view.window?.title = label }
+    }
+}
+
 /// Standard macOS settings window: toolbar tabs, fixed size, changes apply immediately.
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     static let size = NSSize(width: 680, height: 620)
@@ -133,7 +146,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     init(engine: Engine, agent: Agent) {
         model = SettingsModel(agent: agent)
-        let tabs = NSTabViewController()
+        let tabs = SettingsTabs()
         tabs.tabStyle = .toolbar
         func pane<V: View>(_ title: String, _ symbol: String, _ view: V) -> NSTabViewItem {
             let host = NSHostingController(rootView: view.frame(width: Self.size.width, height: Self.size.height))
@@ -150,7 +163,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         tabs.addTabViewItem(pane("Smart Filing", "sparkles", SmartFilingTab(model: model)))
         tabs.addTabViewItem(pane("Rules", "list.bullet.rectangle", RulesTab(model: model)))
 
-        tabs.title = "General"
         let window = NSWindow(contentViewController: tabs)
         window.title = "General"
         window.toolbarStyle = .preference
