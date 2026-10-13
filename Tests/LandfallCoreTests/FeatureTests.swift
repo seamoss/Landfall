@@ -172,9 +172,9 @@ final class FeatureTests: XCTestCase {
     func testSearchFindsContentButNeverSecrets() throws {
         let e = try s.engine()
         try s.write(s.downloads, "Product Call.txt", tactiqHeader)
-        try s.write(s.downloads, "client_secret_1.json", #"{"client_secret": "installer portal"}"#)
+        try s.write(s.downloads, "client_secret_1.json", #"{"client_secret": "rocket portal"}"#)
         e.scanNow()
-        let hits = e.ledger.searchContent("installer portal")
+        let hits = e.ledger.searchContent("rocket portal")
         XCTAssertEqual(hits.map(\.item.name), ["Product Call.txt"])
         XCTAssertTrue(hits[0].snippet.contains("«"))
     }

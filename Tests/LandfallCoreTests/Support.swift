@@ -23,7 +23,14 @@ final class Sandbox {
         // Keep the log (and any default paths) out of the real ~/Library.
         setenv("LANDFALL_HOME", base.path, 1)
         Log.echo = false
+        // Fictional people and companies only.
         config = Config.seeded()
+        config.ownerNames = ["Pat Owner"]
+        config.clients = [
+            ClientConfig(name: "Acme", aliases: ["Roadrunner", "Rocket Portal"],
+                         people: ["Alex Rivera", "Jordan Patel", "Casey Morgan"]),
+            ClientConfig(name: "Globex", aliases: ["GLOBEX"]),
+        ]
         config.library = library.path
         config.recentShelf = nil
         config.notify = false
@@ -65,5 +72,5 @@ let tactiqHeader = """
   Participants: Alex Rivera, Jordan Patel, Pat Owner, Casey Morgan
 
   ## Highlights
-  > 01:39 Jordan: let's look at the installer portal.
+  > 01:39 Jordan: let's look at the rocket portal.
 """

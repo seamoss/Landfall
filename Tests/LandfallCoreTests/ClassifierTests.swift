@@ -60,7 +60,7 @@ final class ClassifierTests: XCTestCase {
     func testTranscriptWithOnlyContentMatchNeedsReview() throws {
         let text = tactiqHeader
             .replacingOccurrences(of: "Alex Rivera, Jordan Patel, Pat Owner, Casey Morgan", with: "Pat Owner, Riley Chen")
-            .replacingOccurrences(of: "installer portal", with: "the Acme rollout")
+            .replacingOccurrences(of: "rocket portal", with: "the Acme rollout")
         let d = s.classify(try s.write(s.downloads, "Meeting Transcription.txt", text))
         XCTAssertEqual(d.destination, s.lib("Meetings/Acme/2026-09"))
         XCTAssertLessThan(d.confidence, s.config.autoThreshold)

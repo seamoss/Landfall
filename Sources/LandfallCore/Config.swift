@@ -255,23 +255,10 @@ public struct Config: Codable {
         )
     }
 
-    /// The starting config written by `landfall init`, seeded from the 2026-10-12 cleanup.
+    /// The starting config written by `landfall init` and on first launch. Personal details
+    /// (your name, your clients) are added in Settings and live only in your config file.
     public static func seeded() -> Config {
         var c = standard
-        c.ownerNames = ["Pat Owner", "Pat Owner", "Pat Owner", "Owner"]
-        c.clients = [
-            ClientConfig(name: "Acme", aliases: ["Roadrunner", "Rocket Portal", "rocketfuel"],
-                         people: ["Jordan Patel", "Casey Morgan", "Alex Rivera", "Drew Kim", "Morgan Diaz"]),
-            ClientConfig(name: "Globex", aliases: ["GLOBEX"]),
-            ClientConfig(name: "Hooli", aliases: ["evalsuite", "ProjectA", "ProjectB", "ProjectC", "ProjectD"],
-                         people: ["Quinn Hayes", "Avery Brooks", "Rowan Price", "Sage Ellis"],
-                         folder: "Clients/Hooli Evals"),
-            ClientConfig(name: "Umbrella"),
-            ClientConfig(name: "Stark"),
-            ClientConfig(name: "Wayne"),
-            ClientConfig(name: "Wonka"),
-            ClientConfig(name: "Cyberdyne", aliases: ["Cyberdyne"], folder: "Clients/cyberdyne"),
-        ]
         c.rules = [
             RuleConfig(name: "Phone videos by year", nameRegex: "^(\\d{8}_\\d{6}|PXL_|IMG_\\d+)",
                        extensions: ["mp4", "mov"], to: "Personal/Media/{yyyy}"),
