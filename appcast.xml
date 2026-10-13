@@ -5,5 +5,20 @@
     <link>https://github.com/seamoss/Landfall</link>
     <description>Landfall updates</description>
     <language>en</language>
+    <item>
+      <title>Landfall 0.6.0</title>
+      <pubDate>Tue, 13 Oct 2026 20:44:04 -0000</pubDate>
+      <sparkle:version>202610131343</sparkle:version>
+      <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>https://github.com/seamoss/Landfall/releases/tag/v0.6.0</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Automatic updates</b> with Sparkle: Landfall checks once a day for signed, notarized updates from GitHub, notifies you without interrupting, and offers &quot;Update to …&quot; in the menu. Settings › General › Updates has the switches and a Check Now button. Install this version manually once; later versions arrive by themselves.</li>
+</ul>
+      ]]></description>
+      <enclosure url="https://github.com/seamoss/Landfall/releases/download/v0.6.0/Landfall-0.6.0.dmg" type="application/octet-stream" sparkle:edSignature="JByMIRtn1Yqjj6XbxatX4UlNjQqHInoRWDGNqIwIeq5ibTeNQ2662J4E6c6j743HKKzBOwpXoB9tNkGxDx40CQ==" length="4440701"/>
+    </item>
   </channel>
 </rss>

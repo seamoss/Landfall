@@ -5,6 +5,8 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-13
+
 ### Added
 - **Automatic updates** with Sparkle: Landfall checks once a day for signed, notarized updates from GitHub, notifies you without interrupting, and offers "Update to …" in the menu. Settings › General › Updates has the switches and a Check Now button. Install this version manually once; later versions arrive by themselves.
 
