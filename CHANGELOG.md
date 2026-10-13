@@ -5,6 +5,8 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-13
+
 ### Added
 - **About Landfall** in the menu: version, build, copyright and a link to the project. Also `landfall://about`.
 
