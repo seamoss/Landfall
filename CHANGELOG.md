@@ -5,6 +5,8 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-13
+
 ### Security
 - The app no longer ships a starter configuration containing real client and people names; new installs start with no clients, and personal details live only in your own config file. Upgrade from 0.5.0.
 
