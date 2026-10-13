@@ -205,7 +205,7 @@ final class Toast: NSObject {
         }
         let top = panel.frame.maxY
         panel.contentView = content
-        let size = content.fittingSize
+        let size = NSSize(width: Toast.width, height: content.fittingSize.height)
         panel.setFrame(NSRect(x: panel.frame.minX, y: top - size.height, width: size.width, height: size.height), display: true)
         updateStatus()
     }
@@ -510,7 +510,11 @@ final class Toast: NSObject {
         ])
 
         let tintBorder = m.trust.level == .trusted ? nil : trustColor(m.trust.level).withAlphaComponent(0.7)
-        return wrap(content, live: live, border: tintBorder)
+        let outer = wrap(content, live: live, border: tintBorder)
+        // The glass view must not grow past the content's width (it would hang off-screen).
+        outer.translatesAutoresizingMaskIntoConstraints = false
+        outer.widthAnchor.constraint(equalToConstant: width).isActive = true
+        return outer
     }
 
     /// Liquid Glass on macOS 26; vibrant material before; solid when Reduce Transparency is on.
@@ -845,11 +849,19 @@ final class Toaster {
         layout()
     }
 
+    /// The display the pointer is on (like notifications), inset from the top-right of its usable area.
+    private var screenFrame: NSRect {
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens.first
+        return screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+    }
+
     private func origin(for index: Int, height: CGFloat) -> NSPoint {
-        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let screen = screenFrame
         var y = screen.maxY - 12
         for t in toasts.prefix(index) { y -= t.height + 10 }
-        return NSPoint(x: screen.maxX - Toast.width - 12, y: y - height)
+        let w = index < toasts.count ? toasts[index].panel.frame.width : Toast.width
+        return NSPoint(x: screen.maxX - min(w, screen.width - 24) - 12, y: max(screen.minY + 12, y - height))
     }
 
     private func layout() {
