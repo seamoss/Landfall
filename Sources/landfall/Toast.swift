@@ -212,7 +212,8 @@ final class Toast: NSObject {
 
     func show(at origin: NSPoint) {
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        panel.setFrameOrigin(reduceMotion ? origin : NSPoint(x: origin.x + 40, y: origin.y))
+        // Drop down from under the menu bar.
+        panel.setFrameOrigin(reduceMotion ? origin : NSPoint(x: origin.x, y: origin.y + 24))
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
@@ -849,7 +850,7 @@ final class Toaster {
         layout()
     }
 
-    /// The display the pointer is on (like notifications), inset from the top-right of its usable area.
+    /// The display the pointer is on; toasts hang centered just under its menu bar.
     private var screenFrame: NSRect {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens.first
@@ -861,7 +862,7 @@ final class Toaster {
         var y = screen.maxY - 12
         for t in toasts.prefix(index) { y -= t.height + 10 }
         let w = index < toasts.count ? toasts[index].panel.frame.width : Toast.width
-        return NSPoint(x: screen.maxX - min(w, screen.width - 24) - 12, y: max(screen.minY + 12, y - height))
+        return NSPoint(x: (screen.midX - w / 2).rounded(), y: max(screen.minY + 12, y - height))
     }
 
     private func layout() {
