@@ -28,6 +28,15 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     static func start(menubar: Bool, catalog: Bool) -> Never {
         Log.echo = isatty(2) != 0
+        #if MAS
+        // App Review and the sandbox: no Terminal scripting, no writing to /Applications or ~/Library/Fonts,
+        // no external command-line tools.
+        Capabilities.runScripts = false
+        Capabilities.moveToApplications = false
+        Capabilities.onePasswordCLI = false
+        Capabilities.installFontsDirectly = false
+        #endif
+        FolderAccess.restore()
         let e = makeEngine()
         let agent = Agent(engine: e, menubar: menubar)
         shared = agent
@@ -130,7 +139,16 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func firstRunSetup() {
         guard engine.ledger.meta("first-run") == nil else { return }
         engine.ledger.setMeta("first-run", formatDate(Date(), "yyyy-MM-dd"))
-        if SMAppService.mainApp.status != .enabled { try? SMAppService.mainApp.register() }
+        // Starting at login needs the user's say-so (App Review 2.4.5).
+        if SMAppService.mainApp.status != .enabled {
+            let alert = NSAlert()
+            alert.messageText = "Open Landfall at login?"
+            alert.informativeText = "Landfall works in the background, so it's most useful when it starts with your Mac. You can change this anytime in Settings › General."
+            alert.addButton(withTitle: "Open at Login")
+            alert.addButton(withTitle: "Not Now")
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn { try? SMAppService.mainApp.register() }
+        }
         if engine.config.useCalendar { calendar.requestAccess { _ in } }
         openSettings()
     }
@@ -180,6 +198,15 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         credits.addAttribute(.paragraphStyle, value: centered, range: NSRange(location: 0, length: credits.length))
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+    }
+
+    /// Folder access changed (granted in Settings): watch again and pick up what's already there.
+    func folderAccessChanged() {
+        watcher?.stop()
+        watcher = Watcher(paths: engine.config.roots.map { $0.url.path }) { [engine] in engine.handle(paths: $0) }
+        watcher?.start()
+        engine.catalog()
+        engine.reconcile()
     }
 
     func openSettings() {

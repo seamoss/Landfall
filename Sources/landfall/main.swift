@@ -118,7 +118,7 @@ var agentPlist: URL {
 
 func agentRunning() -> Bool {
     let me = ProcessInfo.processInfo.processIdentifier
-    let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.noisebeard.Landfall")
+    let app = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.noisebeard.Landfall")
         .contains { $0.processIdentifier != me }
     return app || run("/bin/launchctl", ["print", "gui/\(getuid())/\(launchLabel)"]).status == 0
 }
@@ -433,7 +433,7 @@ case "uninstall":
     run("/bin/launchctl", ["bootout", "gui/\(getuid())/\(launchLabel)"])
     try? FileManager.default.removeItem(at: agentPlist)
     if Bundle.main.bundleIdentifier != nil { try? SMAppService.mainApp.unregister() }
-    NSRunningApplication.runningApplications(withBundleIdentifier: "com.noisebeard.Landfall")
+    NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.noisebeard.Landfall")
         .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }.forEach { $0.terminate() }
     print("Stopped Landfall and removed it from login items. Drag /Applications/Landfall.app to the Trash to finish; config and history stay in ~/.config/landfall and ~/Library/Application Support/Landfall.")
 

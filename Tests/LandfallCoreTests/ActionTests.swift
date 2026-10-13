@@ -208,3 +208,31 @@ final class AutoFileTests: XCTestCase {
         XCTAssertFalse(try model(try s.write(s.desktop, "Screenshot 2026-10-12 at 15.22.58.png", "png")).autoFile)
     }
 }
+
+/// The sandbox's replacement for `spctl` must agree with Gatekeeper.
+final class SignatureCheckTests: XCTestCase {
+    func testAppleAppIsAccepted() {
+        var t = TrustInfo()
+        Trust.codeSignature(&t, URL(fileURLWithPath: "/System/Applications/Calculator.app"))
+        XCTAssertEqual(t.gatekeeper, .accepted("Apple System"))
+    }
+
+    func testUnsignedAppIsRejected() throws {
+        let s = try Sandbox()
+        let app = s.downloads.appendingPathComponent("Unsigned.app/Contents/MacOS")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try Data("#!/bin/sh\n".utf8).write(to: app.appendingPathComponent("Unsigned"))
+        var t = TrustInfo()
+        Trust.codeSignature(&t, s.downloads.appendingPathComponent("Unsigned.app"))
+        XCTAssertEqual(t.gatekeeper, .rejected)
+    }
+
+    func testNotarizedAppIsAcceptedWithSigner() throws {
+        let landfall = URL(fileURLWithPath: "/Applications/Landfall.app")
+        try XCTSkipUnless(fileExists(landfall.path), "needs an installed, notarized Landfall")
+        var t = TrustInfo()
+        Trust.codeSignature(&t, landfall)
+        XCTAssertEqual(t.gatekeeper, .accepted("Notarized Developer ID"))
+        XCTAssertTrue(t.signer?.contains("4J2T5H73JM") == true, t.signer ?? "no signer")
+    }
+}

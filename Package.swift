@@ -6,6 +6,8 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "landfall", targets: ["landfall"]),
+        // Used by the Mac App Store app target in the Xcode project (project.yml).
+        .library(name: "LandfallCore", targets: ["LandfallCore"]),
     ],
     dependencies: [
         // Auto-updates (the app only; LandfallCore stays dependency-free).

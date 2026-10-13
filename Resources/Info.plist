@@ -15,7 +15,7 @@
 	<key>LSMinimumSystemVersion</key><string>14.0</string>
 	<key>LSUIElement</key><true/>
 	<key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
-	<key>NSHumanReadableCopyright</key><string>© 2026 Seánan McCullough</string>
+	<key>NSHumanReadableCopyright</key><string>© 2026 Heavystack</string>
 	<key>NSDesktopFolderUsageDescription</key><string>Landfall watches your Desktop and files what lands there.</string>
 	<key>NSDocumentsFolderUsageDescription</key><string>Landfall files items into your Documents library and tidies loose files there.</string>
 	<key>NSDownloadsFolderUsageDescription</key><string>Landfall watches Downloads and files what you download.</string>

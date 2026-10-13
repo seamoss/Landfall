@@ -268,6 +268,7 @@ public struct Classifier {
             return hold(0.5, "code", "\(config.folders.dev)/\(f.name) already exists — merge by hand")
         }
         if f.gitDirty { return hold(0.5, "code", "repo has uncommitted changes — commit or stash first") }
+        if f.gitUnknown { return hold(0.5, "code", "can't check this repo for uncommitted changes here — move it yourself") }
         return moveTo(config.folders.dev, f.isGitRepo ? 0.9 : 0.7, "code",
                       f.isGitRepo ? "git repository" : "code project (no git)")
     }

@@ -5,6 +5,14 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+### Added
+- Groundwork for a **Mac App Store edition** (`com.heavystack.Landfall`): sandboxed build from `project.yml` via `scripts/mas.sh`, folder grants for Desktop and Documents, and Gatekeeper and git checks that work inside the sandbox.
+
+### Changed
+- Landfall asks before adding itself to login items, instead of doing it on first launch.
+- Turning on Smart Filing asks for consent first, naming Anthropic and exactly what is sent.
+- Copyright is now © Heavystack.
+
 ## [0.6.4] - 2026-10-13
 
 ### Added

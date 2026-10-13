@@ -24,6 +24,8 @@ public struct ItemFacts {
     public var entries: [String]?
     public var isGitRepo = false
     public var gitDirty = false
+    /// `git` couldn't run (e.g. in the App Sandbox), so uncommitted changes are unknown.
+    public var gitUnknown = false
     public var tags: [String] = []
     /// Calendar events around the time it arrived (filled in by the engine).
     public var meetings: [Meeting] = []
@@ -106,8 +108,12 @@ public enum Inspector {
         } else if !f.isPackage {
             f.isGitRepo = fileExists(url.appendingPathComponent(".git").path)
             if f.isGitRepo {
-                let r = run("/usr/bin/git", ["-C", path, "status", "--porcelain"])
-                f.gitDirty = r.status != 0 || !r.out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                let r = run("/usr/bin/git", ["-C", path, "status", "--porcelain"], stderr: true)
+                if r.status == -1 || r.out.contains("App Sandbox") || r.out.contains("xcrun: error") {
+                    f.gitUnknown = true
+                } else {
+                    f.gitDirty = r.status != 0 || !r.out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }
             }
             f.entries = listFiles(url, limit: 5000)
         }

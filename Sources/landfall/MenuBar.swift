@@ -146,7 +146,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         let secrets = e.ledger.items(statuses: ["proposed", "held", "filed", "kept"])
             .filter { $0.decision?.rule == "credential" && fileExists($0.path) }
-        if !secrets.isEmpty {
+        if !secrets.isEmpty && Capabilities.onePasswordCLI {
             let vault = ActionItem("Import Credentials to 1Password…", symbol: "key") { importSecrets(secrets, engine: e) }
             vault.badge = NSMenuItemBadge(count: secrets.count)
             menu.addItem(vault)

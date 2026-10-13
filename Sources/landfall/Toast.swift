@@ -39,6 +39,9 @@ enum Performer {
             let out = try Unarchiver.extract(url)
             NSWorkspace.shared.activateFileViewerSelecting([out])
             return "Unpacked to \(out.lastPathComponent)/"
+        case .installFont where !Capabilities.installFontsDirectly:
+            try open(url, withBundle: "com.apple.FontBook")
+            return "Opened in Font Book"
         case .installFont:
             let fonts = URL(fileURLWithPath: Paths.home).appendingPathComponent("Library/Fonts")
             try fm.createDirectory(at: fonts, withIntermediateDirectories: true)

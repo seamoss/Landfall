@@ -168,6 +168,17 @@ swift scripts/make-icon.swift icon Resources/Landfall.icon         # regenerate 
 
 Layout: `Sources/LandfallCore` (engine, classifier, ledger, actions — no UI), `Sources/landfall` (app, menu, toasts, Settings, CLI), `Tests/LandfallCoreTests`, `scripts/`, `docs/adr/`. Why it's built this way: [ADR 0001](docs/adr/0001-native-swift-app-and-cli.md).
 
+## Mac App Store edition
+
+A sandboxed edition for the Mac App Store is built from the same sources ([ADR 0010](docs/adr/0010-mac-app-store-edition.md)):
+
+```bash
+./scripts/mas.sh            # generate Landfall.xcodeproj, archive, export dist/mas/Landfall.pkg
+./scripts/mas.sh --upload   # …and upload the build to App Store Connect
+```
+
+It needs XcodeGen (`brew install xcodegen`) and Xcode signed in to the team. Differences from the GitHub edition: Desktop and Documents are granted once in Settings › General › Permissions; updates come from the App Store; no command-line tool, Run in Terminal, Move to Applications or 1Password CLI import.
+
 ## Releasing
 
 One-time setup on the release machine: the Developer ID Application certificate in the keychain, a notary profile, `gh` signed in, and the Sparkle update-signing key in the login keychain:

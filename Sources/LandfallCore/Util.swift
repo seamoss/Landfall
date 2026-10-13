@@ -13,7 +13,16 @@ public enum LandfallError: Error, CustomStringConvertible {
 }
 
 public enum Paths {
-    public static var home: String { NSHomeDirectory() }
+    /// The user's real home folder — the base for watched folders, even inside the App Sandbox.
+    public static let home: String = {
+        if let pw = getpwuid(getuid()), let dir = pw.pointee.pw_dir { return String(cString: dir) }
+        return NSHomeDirectory()
+    }()
+
+    /// Where Landfall keeps its own data: the user's home, or the app's container when sandboxed.
+    public static var dataHome: String { NSHomeDirectory() }
+
+    public static var isSandboxed: Bool { ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil }
 
     /// LANDFALL_HOME puts config, ledger and log in one directory (used by tests).
     static var appHome: URL? {
@@ -21,25 +30,42 @@ public enum Paths {
     }
 
     public static var configURL: URL {
-        (appHome ?? URL(fileURLWithPath: home).appendingPathComponent(".config/landfall"))
+        (appHome ?? URL(fileURLWithPath: dataHome).appendingPathComponent(".config/landfall"))
             .appendingPathComponent("config.json")
     }
 
     public static var ledgerURL: URL {
-        (appHome ?? URL(fileURLWithPath: home).appendingPathComponent("Library/Application Support/Landfall"))
+        (appHome ?? URL(fileURLWithPath: dataHome).appendingPathComponent("Library/Application Support/Landfall"))
             .appendingPathComponent("ledger.sqlite")
     }
 
     public static var logURL: URL {
-        (appHome ?? URL(fileURLWithPath: home).appendingPathComponent("Library/Logs/Landfall"))
+        (appHome ?? URL(fileURLWithPath: dataHome).appendingPathComponent("Library/Logs/Landfall"))
             .appendingPathComponent("landfall.log")
     }
 
-    public static func expand(_ p: String) -> String { (p as NSString).expandingTildeInPath }
+    /// `~` means the real home folder, also in the sandbox (where NSString's tilde expansion points at the container).
+    public static func expand(_ p: String) -> String {
+        if p == "~" { return home }
+        if p.hasPrefix("~/") { return home + p.dropFirst(1) }
+        return p
+    }
 
     public static func pretty(_ p: String) -> String {
         p.hasPrefix(home) ? "~" + p.dropFirst(home.count) : p
     }
+}
+
+/// Features a build can switch off. The Mac App Store edition turns off what the sandbox or App Review won't allow.
+public enum Capabilities {
+    /// Run in Terminal… (needs Apple Events to Terminal).
+    public static var runScripts = true
+    /// Move to Applications (writes outside the user's folders).
+    public static var moveToApplications = true
+    /// Import to 1Password (runs the `op` command-line tool).
+    public static var onePasswordCLI = true
+    /// Copy fonts into ~/Library/Fonts; otherwise fonts open in Font Book.
+    public static var installFontsDirectly = true
 }
 
 /// Canonical form for every path Landfall stores or compares.

@@ -59,7 +59,16 @@ public enum Space {
 
     static func idleDays(_ repo: String, now: Date) -> Double? {
         let r = run("/usr/bin/git", ["-C", repo, "log", "-1", "--format=%ct"])
-        guard let ts = Double(r.out.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
-        return now.timeIntervalSince(Date(timeIntervalSince1970: ts)) / 86400
+        if let ts = Double(r.out.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            return now.timeIntervalSince(Date(timeIntervalSince1970: ts)) / 86400
+        }
+        // Without git (e.g. in the App Sandbox): the last time HEAD moved.
+        for marker in [".git/logs/HEAD", ".git/index", ".git/HEAD"] {
+            let p = (repo as NSString).appendingPathComponent(marker)
+            if let d = (try? FileManager.default.attributesOfItem(atPath: p))?[.modificationDate] as? Date {
+                return now.timeIntervalSince(d) / 86400
+            }
+        }
+        return nil
     }
 }

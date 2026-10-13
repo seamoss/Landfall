@@ -1,5 +1,20 @@
 import AppKit
 import LandfallCore
+#if MAS
+
+/// The Mac App Store updates the app itself; this keeps the menu and Settings code the same.
+final class Updater {
+    static let shared = Updater()
+    let isRunning = false
+    let availableVersion: String? = nil
+    var onChange: (() -> Void)?
+    var automaticallyChecks = false
+    var automaticallyDownloads = false
+    func start() {}
+    func checkForUpdates() {}
+}
+
+#else
 import Sparkle
 
 /// Sparkle auto-updates. Landfall lives in the menu bar, so scheduled update checks use
@@ -63,3 +78,5 @@ final class Updater: NSObject, SPUStandardUserDriverDelegate {
         onChange?()
     }
 }
+
+#endif

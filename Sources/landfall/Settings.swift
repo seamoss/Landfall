@@ -114,6 +114,29 @@ final class SettingsModel: ObservableObject {
         }
     }
 
+    /// Before any file content goes to a third-party AI, say exactly what and to whom (App Review 5.1.2(i)).
+    func confirmSmartFiling() -> Bool {
+        let key = "smartFilingConsent"
+        if UserDefaults.standard.bool(forKey: key) { return true }
+        let alert = NSAlert()
+        alert.messageText = "Send file contents to Anthropic?"
+        alert.informativeText = """
+        Smart Filing asks Claude, Anthropic's AI, where each file it reads belongs. For each file it sends: \
+        the name, type, size and download site; up to \(config.ai.excerptChars.formatted()) characters of its text; \
+        your folder names; and your client names and aliases.
+
+        Never sent: credentials or anything that looks like a secret, résumés and contact cards, and people's names \
+        from your client list. Requests use your own API key, under your Anthropic account and its data policies. \
+        You can turn Smart Filing off at any time.
+        """
+        alert.addButton(withTitle: "Turn On Smart Filing")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        UserDefaults.standard.set(true, forKey: key)
+        return true
+    }
+
     func requestCalendar() {
         agent?.calendar.requestAccess { [weak self] ok in
             self?.calendarAccess = ok
@@ -213,7 +236,14 @@ struct GeneralTab: View {
                 ForEach(model.config.roots, id: \.name) { r in
                     PermissionRow(title: "\(r.name.capitalized) folder", symbol: "folder",
                                   ok: model.folderAccess[r.name] ?? false,
-                                  fix: "Open Privacy Settings…") { openPrivacy("Privacy_FilesAndFolders") }
+                                  fix: Paths.isSandboxed ? "Grant Access…" : "Open Privacy Settings…") {
+                        if Paths.isSandboxed {
+                            if FolderAccess.request(r.url.path, name: r.name.capitalized) { model.agent?.folderAccessChanged() }
+                            model.refreshPermissions()
+                        } else {
+                            openPrivacy("Privacy_FilesAndFolders")
+                        }
+                    }
                 }
                 PermissionRow(title: "Notifications", symbol: "bell.badge", ok: model.notificationsAllowed ?? false,
                               fix: "Open Notification Settings…") {
@@ -262,6 +292,7 @@ struct GeneralTab: View {
                 StatusLine(ok: OnePassword.cli != nil, okText: "1Password CLI found", badText: OnePassword.installHint)
             }
 
+            #if !MAS
             Section("Updates") {
                 Toggle(isOn: Binding(get: { Updater.shared.automaticallyChecks },
                                      set: { Updater.shared.automaticallyChecks = $0; model.objectWillChange.send() })) {
@@ -282,6 +313,8 @@ struct GeneralTab: View {
                     }
                 }
             }
+
+            #endif
 
             Section("Disk Space") {
                 Toggle(isOn: $model.config.spaceReport) {
@@ -419,7 +452,8 @@ struct SmartFilingTab: View {
     var body: some View {
         Form {
             Section {
-                Toggle(isOn: $model.config.ai.enabled) {
+                Toggle(isOn: Binding(get: { model.config.ai.enabled },
+                                     set: { on in if !on || model.confirmSmartFiling() { model.config.ai.enabled = on } })) {
                     Label {
                         Text("Smart Filing")
                         Text("Reads what's inside a file and picks the right folder or client. Uses your own Anthropic API key; you pay Anthropic directly.")

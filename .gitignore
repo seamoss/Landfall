@@ -1,4 +1,6 @@
 .build/
+.build-mas/
 .swiftpm/
 .DS_Store
 dist/
+Landfall.xcodeproj/

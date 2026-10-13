@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 // MARK: - What kind of thing landed
 
@@ -136,9 +137,9 @@ public enum Trust {
         t.originHost = f.origins.lazy.compactMap(host).first
 
         switch kind {
-        case .application: gatekeeper(&t, ["--assess", "--type", "execute", "-vv", f.url.path])
-        case .installerPackage: gatekeeper(&t, ["--assess", "--type", "install", "-vv", f.url.path])
-        case .diskImage: gatekeeper(&t, ["--assess", "--type", "open", "--context", "context:primary-signature", "-vv", f.url.path])
+        case .application: gatekeeper(&t, ["--assess", "--type", "execute", "-vv", f.url.path], url: f.url, kind: kind)
+        case .installerPackage: gatekeeper(&t, ["--assess", "--type", "install", "-vv", f.url.path], url: f.url, kind: kind)
+        case .diskImage: gatekeeper(&t, ["--assess", "--type", "open", "--context", "context:primary-signature", "-vv", f.url.path], url: f.url, kind: kind)
         default: break
         }
 
@@ -175,14 +176,63 @@ public enum Trust {
         return t
     }
 
-    static func gatekeeper(_ t: inout TrustInfo, _ args: [String]) {
-        let r = run("/usr/sbin/spctl", args, stderr: true)
-        if r.out.contains(": accepted") {
-            let source = r.out.captures("source=(.+)")?[1] ?? "Accepted by Gatekeeper"
-            t.gatekeeper = .accepted(source)
-            t.signer = r.out.captures("origin=(?:Developer ID (?:Application|Installer): )?(.+)")?[1]
-        } else if r.out.contains("rejected") {
+    /// Gatekeeper's verdict. `spctl` where it's available; in the App Sandbox (where it isn't),
+    /// the same questions asked of the Security framework (apps, disk images) or `pkgutil` (packages).
+    static func gatekeeper(_ t: inout TrustInfo, _ args: [String], url: URL, kind: FileKind) {
+        if !Paths.isSandboxed {
+            let r = run("/usr/sbin/spctl", args, stderr: true)
+            if r.out.contains(": accepted") {
+                let source = r.out.captures("source=(.+)")?[1] ?? "Accepted by Gatekeeper"
+                t.gatekeeper = .accepted(source)
+                t.signer = r.out.captures("origin=(?:Developer ID (?:Application|Installer): )?(.+)")?[1]
+                return
+            } else if r.out.contains("rejected") {
+                t.gatekeeper = .rejected
+                return
+            }
+        }
+        if kind == .installerPackage { packageSignature(&t, url) } else { codeSignature(&t, url) }
+    }
+
+    static func codeSignature(_ t: inout TrustInfo, _ url: URL) {
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else {
             t.gatekeeper = .rejected
+            return
+        }
+        func satisfies(_ requirement: String) -> Bool {
+            var req: SecRequirement?
+            guard SecRequirementCreateWithString(requirement as CFString, [], &req) == errSecSuccess else { return false }
+            return SecStaticCodeCheckValidity(code, [], req) == errSecSuccess
+        }
+        if satisfies("anchor apple") {
+            t.gatekeeper = .accepted("Apple System")
+        } else if satisfies("notarized") {
+            t.gatekeeper = .accepted("Notarized Developer ID")
+            t.signer = signer(of: code)
+        } else {
+            t.gatekeeper = .rejected
+        }
+    }
+
+    static func signer(of code: SecStaticCode) -> String? {
+        var info: CFDictionary?
+        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+              let dict = info as? [String: Any],
+              let leaf = (dict[kSecCodeInfoCertificates as String] as? [SecCertificate])?.first,
+              let summary = SecCertificateCopySubjectSummary(leaf) as String? else { return nil }
+        return summary.replacingOccurrences(of: "Developer ID Application: ", with: "")
+    }
+
+    static func packageSignature(_ t: inout TrustInfo, _ url: URL) {
+        let r = run("/usr/sbin/pkgutil", ["--check-signature", url.path], stderr: true)
+        let signed = r.out.contains("Status: signed")
+        let notarized = r.out.contains("Notarization: trusted")
+        if signed && (notarized || r.out.contains("signed Apple Software")) {
+            t.gatekeeper = .accepted(notarized ? "Notarized Developer ID" : "Apple System")
+            t.signer = r.out.captures("1\\. Developer ID Installer: (.+)")?[1]
+        } else {
+            t.gatekeeper = r.status == -1 ? .notApplicable : .rejected
         }
     }
 
@@ -290,7 +340,8 @@ public enum ActionPlanner {
         case .application:
             switch trust.gatekeeper {
             case .accepted:
-                a += [FileAction(.moveToApplications, "Move to Applications"), FileAction(.open, "Open")]
+                if Capabilities.moveToApplications { a.append(FileAction(.moveToApplications, "Move to Applications")) }
+                a.append(FileAction(.open, "Open"))
             case .rejected:
                 break  // no way to launch it from here
             case .notApplicable:
@@ -307,7 +358,7 @@ public enum ActionPlanner {
             if trust.gatekeeper != .rejected { a.append(FileAction(.mountImage, "Open disk image")) }
         case .script:
             a.append(FileAction(.viewSource, "View source"))
-            a.append(FileAction(.runInTerminal, "Run in Terminal…", confirm: runWarning))
+            if Capabilities.runScripts { a.append(FileAction(.runInTerminal, "Run in Terminal…", confirm: runWarning)) }
         case .linkFile:
             let target = Trust.linkTarget(f.url) ?? "an unknown target"
             let local = f.ext == "fileloc" || !(target.hasPrefix("http://") || target.hasPrefix("https://"))
@@ -323,15 +374,18 @@ public enum ActionPlanner {
             }
             a.append(FileAction(.preview, "Preview"))
         case .font:
-            a += [FileAction(.installFont, "Install font"), FileAction(.preview, "Preview")]
+            a += [FileAction(.installFont, Capabilities.installFontsDirectly ? "Install font" : "Open in Font Book"),
+                  FileAction(.preview, "Preview")]
         case .calendar:
             a += [FileAction(.addToCalendar, "Add to Calendar"), FileAction(.preview, "Preview")]
         case .contact:
             a += [FileAction(.addContact, "Add to Contacts"), FileAction(.preview, "Preview")]
         case .credential:
             let vault = config.onePasswordVault.map { "the “\($0)” vault" } ?? "your default vault"
-            a.append(FileAction(.importTo1Password, "Import to 1Password…",
-                                confirm: "Creates a Document item in \(vault) from \(f.name), then moves the original to the Trash."))
+            if Capabilities.onePasswordCLI {
+                a.append(FileAction(.importTo1Password, "Import to 1Password…",
+                                    confirm: "Creates a Document item in \(vault) from \(f.name), then moves the original to the Trash."))
+            }
             if decision?.action == .move { a.append(FileAction(.moveToSensitive, "Move to _Sensitive")) }
             a.append(FileAction(.openPasswordManager, "Open 1Password"))
         case .screenshot, .image:
