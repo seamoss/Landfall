@@ -430,17 +430,19 @@ final class Toast: NSObject {
         var row: [NSView] = []
         let visibleCount = m.actions.count > 3 ? 3 : m.actions.count
         for (i, a) in m.actions.prefix(visibleCount).enumerated() {
-            let b = NSButton(title: a.title, target: target, action: #selector(Toast.buttonClicked(_:)))
-            b.tag = i
-            b.bezelStyle = .rounded
-            b.controlSize = .regular
-            b.font = .systemFont(ofSize: 12)
+            let b: NSButton
             if i == 0 {
-                b.bezelColor = a.confirm == nil ? .controlAccentColor : .systemOrange
-                b.keyEquivalent = "\r"
-            } else if a.confirm != nil {
-                b.contentTintColor = .systemOrange
+                // The primary action stays in accent color even though toasts never become the key window.
+                b = PrimaryButton(title: a.title, fill: a.confirm == nil ? .controlAccentColor : .systemOrange,
+                                  target: target, action: #selector(Toast.buttonClicked(_:)))
+            } else {
+                b = NSButton(title: a.title, target: target, action: #selector(Toast.buttonClicked(_:)))
+                b.bezelStyle = .rounded
+                b.controlSize = .regular
+                b.font = .systemFont(ofSize: 12)
+                if a.confirm != nil { b.contentTintColor = .systemOrange }
             }
+            b.tag = i
             buttons.append(b)
             row.append(b)
         }
@@ -545,6 +547,53 @@ final class Toast: NSObject {
         guard let png = rep.representation(using: .png, properties: [:]) else { throw LandfallError.action("encode failed") }
         try png.write(to: url)
     }
+}
+
+/// A filled, always-accent button: the system draws default buttons grey in non-key windows like toasts.
+final class PrimaryButton: NSButton {
+    private let fill: NSColor
+
+    init(title: String, fill: NSColor, target: AnyObject?, action: Selector) {
+        self.fill = fill
+        super.init(frame: .zero)
+        self.title = title
+        self.target = target
+        self.action = action
+        isBordered = false
+        focusRingType = .none
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.cornerCurve = .continuous
+        attributedTitle = NSAttributedString(string: title, attributes: [
+            .foregroundColor: NSColor.white,
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+        ])
+        updateLayer()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var wantsUpdateLayer: Bool { true }
+    override var acceptsFirstResponder: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override var intrinsicContentSize: NSSize {
+        let text = attributedTitle.size()
+        return NSSize(width: ceil(text.width) + 22, height: 24)
+    }
+
+    override var isEnabled: Bool { didSet { needsDisplay = true } }
+    override var isHighlighted: Bool { didSet { needsDisplay = true } }
+
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            var color = fill.usingColorSpace(.deviceRGB) ?? fill
+            if isHighlighted { color = color.blended(withFraction: 0.18, of: .black) ?? color }
+            layer?.backgroundColor = color.withAlphaComponent(isEnabled ? 1 : 0.45).cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() { needsDisplay = true }
 }
 
 /// A thin draining bar along the bottom edge.
