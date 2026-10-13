@@ -4,7 +4,7 @@
 - **Date:** 2026-10-13
 
 ## Context
-Heuristics can recognise a transcript or a screenshot, but not that a PDF is a Globex offer letter or a bike manual. An LLM can, by reading the text. Sending file contents to a third party is a privacy decision the user must make, and API usage costs money the user should control.
+Heuristics can recognise a transcript or a screenshot, but not that a PDF is a particular client's offer letter or a bike manual. An LLM can, by reading the text. Sending file contents to a third party is a privacy decision the user must make, and API usage costs money the user should control.
 
 ## Decision
 - **Smart Filing** is off by default and needs the user's own Anthropic API key (stored in the login keychain). There is no Landfall-operated service or billing.

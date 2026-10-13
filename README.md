@@ -53,7 +53,7 @@ Checked in this order; the first match decides ([ADR 0004](docs/adr/0004-ordered
 11. **Clients** — by name, title, content, meeting participants, download site, or the meeting you were in when it arrived → `Clients/<Client>/`.
 12. **Images**, then anything else stays put until you or Smart Filing decide.
 
-Along the way it renames sensibly (`Report (2).pdf` → `Report.pdf`, `Another Resu,e.pdf` → `Another Resume.pdf`, hash-named images → a title or date), reads text in screenshots for search, and learns: when you re-file the same kind of thing twice, it offers to make a rule.
+Along the way it renames sensibly (`Report (2).pdf` → `Report.pdf`, `My Resu,e.pdf` → `My Resume.pdf`, hash-named images → a title or date), reads text in screenshots for search, and learns: when you re-file the same kind of thing twice, it offers to make a rule.
 
 ### Tracking
 
@@ -117,7 +117,7 @@ Settings has four panes; changes apply immediately:
 
 ```bash
 landfall recent --since 3d          # what landed, and where it went
-landfall why "Product Call"          # history and reasoning for one item
+landfall why "Weekly sync"           # history and reasoning for one item
 landfall where invoice               # find something by name
 landfall search installer portal     # names, document text, text in screenshots
 landfall review                      # decisions waiting for you
@@ -140,9 +140,9 @@ landfall space --trash --idle 30 --yes   # clear rebuildable folders in idle pro
   "autoFileSeconds": 15,
   "rules": [
     { "name": "Bike manuals", "nameRegex": "(?i)(vulcan|carburetor)", "to": "Personal/Vehicles" },
-    { "name": "Globex calls", "participantsAny": ["Jane Doe"], "to": "Meetings/Globex/{yyyy-mm}", "rename": "{date} {title}" }
+    { "name": "Acme calls", "participantsAny": ["Jane Doe"], "to": "Meetings/Acme/{yyyy-mm}", "rename": "{date} {title}" }
   ],
-  "clients": [{ "name": "Initech", "people": ["Sam Lee", "Jane Doe"], "domains": ["initech.example"] }],
+  "clients": [{ "name": "Acme", "people": ["Jane Doe", "Sam Lee"], "domains": ["acme.example"] }],
   "ai": { "enabled": true, "scope": "unsure", "model": "claude-haiku-5-5" }
 }
 ```
