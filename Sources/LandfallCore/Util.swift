@@ -143,6 +143,15 @@ extension String {
         let p = "(?<![\\p{L}\\p{N}])" + NSRegularExpression.escapedPattern(for: w) + "(?![\\p{L}\\p{N}])"
         return range(of: p, options: [.regularExpression, .caseInsensitive]) != nil
     }
+
+    /// Whether every word of a person's name appears as a word, ignoring case and accents:
+    /// "Seánan McCullough" matches `Seanan_McCullough_Resume.pdf` and "McCullough, Seánan".
+    public func containsName(_ name: String) -> Bool {
+        let fold = { (s: String) in s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+        let hay = fold(self)
+        let parts = fold(name).split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        return !parts.isEmpty && parts.allSatisfy { hay.containsWord(String($0)) }
+    }
 }
 
 public func parseDuration(_ s: String) -> TimeInterval? {

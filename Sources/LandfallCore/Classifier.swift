@@ -330,7 +330,7 @@ public struct Classifier {
     func resume(_ f: ItemFacts) -> Decision? {
         guard !f.isDir, f.name.matches("(?i)(r[eé]sum[eé]|resu.e\\b|\\bcv\\b|curriculum vitae)") else { return nil }
         let hay = f.name + "\n" + String((f.textHead ?? "").prefix(3000))
-        if config.ownerNames.contains(where: { hay.containsWord($0) }) {
+        if config.ownerNames.contains(where: { hay.containsName($0) }) {
             return moveTo(config.folders.personal, 0.85, "resume", "your résumé")
         }
         guard f.textHead != nil else { return hold(0.5, "resume", "a résumé, but couldn't tell whose") }

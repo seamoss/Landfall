@@ -110,7 +110,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 menu.addItem(more)
             }
             let all = ActionItem("Apply All", symbol: "checkmark.circle") { [weak self] in
-                for it in review { _ = try? e.apply(it.id) }
+                let failures = review.compactMap { it -> String? in
+                    do { _ = try e.apply(it.id); return nil } catch { return "\(it.name): \(error.localizedDescription)" }
+                }
+                if !failures.isEmpty {
+                    failures.forEach { Log.error("apply failed — \($0)") }
+                    notify("Landfall · Couldn't file \(failures.count) item\(failures.count == 1 ? "" : "s")", failures.joined(separator: "\n"))
+                }
                 self?.refreshBadge()
             }
             all.badge = NSMenuItemBadge(count: review.count)
@@ -154,7 +160,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(ActionItem("Scan Now", symbol: "arrow.clockwise", key: "r") { e.scanNow() })
         menu.addItem(ActionItem("Space Report", symbol: "internaldrive") { Agent.shared?.weeklySpaceReport(force: true) })
         let undo = ActionItem("Undo Last Action", symbol: "arrow.uturn.backward", key: "z") { [weak self] in
-            if let id = e.ledger.lastAppliedOverall()?.itemId { _ = try? e.undo(id) }
+            if let id = e.ledger.lastAppliedOverall()?.itemId {
+                do { _ = try e.undo(id) } catch {
+                    Log.error("undo failed — \(error.localizedDescription)")
+                    notify("Landfall · Couldn't undo", error.localizedDescription)
+                }
+            }
             self?.refreshBadge()
         }
         if let last = e.ledger.lastAppliedOverall(), let it = e.ledger.item(last.itemId) { _ = undo.detail(it.name) }

@@ -225,7 +225,7 @@ public struct Config: Codable {
         Config(
             mode: .shadow,
             library: "~/Documents",
-            ownerNames: [],
+            ownerNames: [NSFullUserName()].filter { !$0.isEmpty },
             autoThreshold: 0.85,
             trashThreshold: 0.9,
             settleSeconds: 5,

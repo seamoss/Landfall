@@ -130,6 +130,12 @@ final class ClassifierTests: XCTestCase {
         XCTAssertEqual(d.destination, s.lib("Personal"))
     }
 
+    func testOwnResumeMatchesNameInFileNameWithoutAccents() throws {
+        s.config.ownerNames = ["Seánan Ó Brádaigh"]
+        let d = s.classify(try s.write(s.downloads, "Seanan_O_Bradaigh_AI_Resume.txt", "Summary\nEngineer"))
+        XCTAssertEqual(d.destination, s.lib("Personal"))
+    }
+
     func testSomeoneElsesResumeIsSensitive() throws {
         let d = s.classify(try s.write(s.downloads, "04-Taylor_Resume_2026.txt", "Taylor\nEngineer"))
         XCTAssertEqual(d.destination, s.lib("Personal/Hiring"))

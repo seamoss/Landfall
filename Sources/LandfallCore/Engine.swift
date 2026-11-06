@@ -78,7 +78,9 @@ public final class Engine: ClassifierContext {
     public func catalog(root name: String? = nil) {
         for r in config.roots where name == nil || r.name == name {
             guard let kids = try? FileManager.default.contentsOfDirectory(at: r.url, includingPropertiesForKeys: nil) else {
-                Log.warn("can't read \(r.path) — grant Landfall access in System Settings › Privacy & Security › Files and Folders")
+                let fix = Paths.isSandboxed ? "Landfall Settings › General › Permissions"
+                                            : "System Settings › Privacy & Security › Files and Folders"
+                Log.warn("can't read \(r.path) — grant Landfall access in \(fix)")
                 continue
             }
             for k in kids { observe(k) }
@@ -599,6 +601,7 @@ public final class Engine: ClassifierContext {
         ledger.markUndone(ev.id)
         ledger.update(id, ["path": np, "status": "kept", "bookmark": Mover.bookmark(np), "name": dst.lastPathComponent])
         ledger.addEvent(id, "undo", src: it.path, dst: np, reason: "undid \(ev.type)", applied: true)
+        Log.info("undid \(ev.type) of \(it.name) → \(Paths.pretty(np))")
         refreshShelf()
         onChange?()
         return np

@@ -13,6 +13,11 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 - Turning on Smart Filing asks for consent first, naming Anthropic and exactly what is sent.
 - Copyright is now © Heavystack.
 
+### Fixed
+- Your own résumé was filed under Personal/Hiring as someone else's. Landfall now knows your name from your Mac account and matches it regardless of accents, case or underscores (`Seanan_Example_Resume.pdf`).
+- Undo Last Action and Apply All no longer fail silently: a failure is logged and shown as a notification.
+- In the App Store edition, the "can't read" warning points to Landfall's own Settings › General › Permissions.
+
 ## [0.6.4] - 2026-10-13
 
 ### Added
