@@ -5,6 +5,8 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-05
+
 ### Added
 - Groundwork for a **Mac App Store edition** (`com.heavystack.Landfall`): sandboxed build from `project.yml` via `scripts/mas.sh`, folder grants for Desktop and Documents, and Gatekeeper and git checks that work inside the sandbox.
 
