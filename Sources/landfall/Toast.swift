@@ -404,7 +404,7 @@ final class Toast: NSObject {
         if m.trust.level != .trusted || m.trust.signer != nil {
             let symbol = m.trust.level == .trusted ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
             lines.append(symbolLabel(symbol, m.trust.summary,
-                                     m.trust.level == .trusted ? .secondaryLabelColor : trustColor(m.trust.level)))
+                                     m.trust.level == .trusted ? .secondaryLabelColor : trustColor(m.trust.level), lines: 2))
         }
         if let dest = m.destinationLabel {
             let smart = m.decision?.rule == "ai"
@@ -625,17 +625,25 @@ final class Toast: NSObject {
 
     /// An SF Symbol followed by text, on one line.
     static func symbolLabel(_ symbol: String, _ text: String, _ color: NSColor, weight: NSFont.Weight = .regular,
-                            symbolColor: NSColor? = nil) -> NSTextField {
+                            symbolColor: NSColor? = nil, lines: Int = 1) -> NSTextField {
         let font = NSFont.systemFont(ofSize: weight == .regular ? 11 : 12, weight: weight)
         let attachment = NSTextAttachment()
         let config = NSImage.SymbolConfiguration(pointSize: font.pointSize - 1, weight: .semibold)
             .applying(.init(paletteColors: [symbolColor ?? color]))
         attachment.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config)
         let s = NSMutableAttributedString(attachment: attachment)
-        s.append(NSAttributedString(string: "  " + text, attributes: [.font: font, .foregroundColor: color]))
+        // The paragraph style decides how an attributed label breaks; without it the text wraps
+        // past the one line the label was measured for and draws over the next row.
+        let para = NSMutableParagraphStyle()
+        para.lineBreakMode = lines == 1 ? .byTruncatingTail : .byWordWrapping
+        s.append(NSAttributedString(string: "  " + text, attributes: [.font: font, .foregroundColor: color,
+                                                                       .paragraphStyle: para]))
+        s.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: s.length))
         let l = NSTextField(labelWithAttributedString: s)
-        l.lineBreakMode = .byTruncatingTail
-        l.maximumNumberOfLines = 1
+        l.lineBreakMode = para.lineBreakMode
+        l.maximumNumberOfLines = lines
+        l.cell?.wraps = lines > 1
+        l.cell?.truncatesLastVisibleLine = true
         l.preferredMaxLayoutWidth = textWidth
         l.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return l

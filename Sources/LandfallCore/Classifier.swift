@@ -14,6 +14,8 @@ public struct Decision: Codable, Equatable {
     public var reason: String
     /// alert: notify loudly · sensitive: secrets or someone else's personal data · noAI: never send to a model
     public var flags: [String] = []
+    /// A proposal for something you kept: never acted on without your click, whatever the mode.
+    public static let askFirst = "askFirst"
 
     public var json: String {
         (try? JSONEncoder().encode(self)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"

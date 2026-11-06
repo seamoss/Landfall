@@ -38,6 +38,46 @@ final class EngineTests: XCTestCase {
         XCTAssertTrue(fileExists(u.path))
     }
 
+    func testReviewKeptProposesButNeverActsOnItsOwn() throws {
+        s.config.mode = .auto
+        let e = try s.engine()
+        let u = try s.write(s.downloads, "Product Call.txt", tactiqHeader)
+        e.scanNow()
+        let id = e.ledger.search("Product Call").first!.id
+        _ = try e.undo(id)
+        XCTAssertEqual(e.ledger.item(id)?.status, "kept")
+
+        // Asked to look again: a proposal, even though auto mode would file it at this confidence.
+        let found = e.reviewKept()
+        XCTAssertEqual(found.map(\.status), ["proposed"])
+        XCTAssertTrue(fileExists(u.path))
+        XCTAssertEqual(e.ledger.item(id)?.decision?.flags.contains(Decision.askFirst), true)
+
+        // Re-judging it (hourly recheck, scan --recheck) keeps it ask-first.
+        e.scanNow(recheck: true)
+        XCTAssertTrue(fileExists(u.path))
+        XCTAssertEqual(e.ledger.item(id)?.status, "proposed")
+
+        // Keep puts it back; a click files it.
+        try e.keep(id)
+        XCTAssertEqual(e.ledger.item(id)?.status, "kept")
+        _ = e.reviewKept()
+        XCTAssertEqual(try e.apply(id).status, "filed")
+        XCTAssertFalse(fileExists(u.path))
+    }
+
+    func testReconcileClearsEntriesForFilesThatAreGone() throws {
+        s.config.mode = .shadow
+        let e = try s.engine()
+        let u = try s.write(s.desktop, "random.jpg", "jpeg")
+        e.scanNow()
+        let id = e.ledger.search("random.jpg").first!.id
+        XCTAssertEqual(e.ledger.item(id)?.status, "proposed")
+        try FileManager.default.removeItem(at: u)
+        e.reconcile()
+        XCTAssertEqual(e.ledger.item(id)?.status, "gone")
+    }
+
     func testLowConfidenceStaysProposedInAuto() throws {
         s.config.mode = .auto
         let e = try s.engine()

@@ -8,6 +8,8 @@ landfall — watches Downloads, Desktop and Documents and files what lands there
 
   landfall init [--force]              write the starter config (~/.config/landfall/config.json)
   landfall scan [--root R] [--recheck] classify everything now (respects mode)
+  landfall rescan [--root R] [--kept]  re-judge everything waiting and clear out entries for files that are gone;
+                                       --kept also proposes homes for items you kept (they always wait for you)
   landfall watch [--menubar]           run the watcher in the foreground (the app does this at login)
   landfall recent [--since 7d] [--root R] [--all]   (--all includes cleared) · recent --clear
   landfall where <query>               where did that file go?
@@ -141,11 +143,21 @@ case "init":
     do { try Config.seeded().save() } catch { die("\(error)") }
     print("Wrote \(Paths.pretty(Paths.configURL.path)) (mode: shadow). Next: `landfall scan` to see what it would do.")
 
-case "scan":
+case "scan", "rescan":
+    // rescan = scan --recheck, after clearing out entries whose files are gone; --kept also re-judges kept items.
     let e = makeEngine()
     let root = option("--root")
-    let results = e.scanNow(root: root, recheck: flag("--recheck"))
+    let rescan = command == "rescan"
+    var stale = 0
+    if rescan {
+        let before = e.ledger.items(statuses: ["gone", "trashed"]).count
+        e.reconcile()
+        stale = e.ledger.items(statuses: ["gone", "trashed"]).count - before
+    }
+    var results = e.scanNow(root: root, recheck: rescan || flag("--recheck"))
+    if flag("--kept") { results += e.reviewKept(root: root) }
     let shown = results.filter { $0.decision.action != .ignore }
+    if stale > 0 { print(dim("Cleared \(stale) entr\(stale == 1 ? "y" : "ies") for files that are gone or in the Trash.")) }
     if shown.isEmpty { print("Nothing new to classify.") }
     for r in shown {
         let conf = String(format: "%.2f", r.decision.confidence)

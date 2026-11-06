@@ -5,6 +5,13 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+### Added
+- **`landfall rescan`** re-judges everything waiting with today's rules and clears out entries for files that have gone or been trashed. **`--kept`**, or **Review Kept Items** in the menu, suggests homes for things you kept. Those suggestions always wait for your click, even in Auto mode, and Keep puts them back.
+
+### Fixed
+- Items that were never filed (waiting, held, proposed, kept) no longer linger in the ledger after their file is deleted or trashed.
+- A toast's warning line (e.g. "image isn't signed — the app inside is checked when opened") was cut off mid-sentence and overlapped the line below; it now wraps to two lines.
+
 ## [0.7.0] - 2026-11-05
 
 ### Added

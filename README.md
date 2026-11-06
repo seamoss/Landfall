@@ -81,7 +81,8 @@ Actions by type:
 | Fonts · calendar invites · contact cards | Install font · Add to Calendar · Add to Contacts |
 | Code | Open in Cursor / VS Code / Zed |
 | Apps | Move to Applications · Open (signed and notarized); Open… with confirmation (unsigned); nothing (rejected by Gatekeeper) |
-| Installers, disk images | Install… / Open disk image (confirmation unless signed) |
+| Installers | Install… (confirmation unless signed) |
+| Disk images | Open disk image — no confirmation, since most vendors sign the app inside rather than the image, and Gatekeeper checks it when it opens; an unsigned image gets a caution line |
 | Scripts | View source first; Run in Terminal… always confirms and runs visibly |
 | `.webloc` / `.fileloc` links | Open link… confirms and shows the target |
 | Office documents with macros | Preview first; Open… warns |
@@ -104,7 +105,7 @@ Settings › Smart Filing:
 
 ## The menu and Settings
 
-The menu bar glyph shows a count when decisions are waiting. The menu lists what needs a decision (with Apply All), what landed recently and where it went, and tools: Smart File unplaced items, import credentials to 1Password, Scan Now (⌘R), Space Report, Undo Last Action (⌘Z), Mode, Settings… (⌘,).
+The menu bar glyph shows a count when decisions are waiting. The menu lists what needs a decision (with Apply All), what landed recently and where it went, and tools: Smart File unplaced items, import credentials to 1Password, Scan Now (⌘R), Review Kept Items, Space Report, Undo Last Action (⌘Z), Mode, Settings… (⌘,).
 
 Settings has four panes; changes apply immediately:
 
@@ -123,6 +124,7 @@ landfall why "Weekly sync"           # history and reasoning for one item
 landfall where invoice               # find something by name
 landfall search installer portal     # names, document text, text in screenshots
 landfall review                      # decisions waiting for you
+landfall rescan --kept               # look again at everything waiting, and suggest homes for kept items
 landfall apply --all                 # accept them
 landfall undo                        # reverse the last move or trash
 landfall mode auto                   # shadow | review | auto

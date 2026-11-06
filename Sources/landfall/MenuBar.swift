@@ -158,6 +158,18 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(vault)
         }
         menu.addItem(ActionItem("Scan Now", symbol: "arrow.clockwise", key: "r") { e.scanNow() })
+        let keptCount = e.ledger.items(statuses: ["kept"]).count
+        if keptCount > 0 {
+            let rk = ActionItem("Review Kept Items", symbol: "tray.and.arrow.down") { [weak self] in
+                e.reconcile()
+                let found = e.reviewKept().filter { $0.status == "proposed" }.count
+                notify("Landfall · Kept items", found == 0 ? "Nothing you kept has a better home yet."
+                       : "\(found) kept item\(found == 1 ? " has" : "s have") a suggested home — they're waiting in the menu.")
+                self?.refreshBadge()
+            }
+            _ = rk.detail("\(keptCount)")
+            menu.addItem(rk)
+        }
         menu.addItem(ActionItem("Space Report", symbol: "internaldrive") { Agent.shared?.weeklySpaceReport(force: true) })
         let undo = ActionItem("Undo Last Action", symbol: "arrow.uturn.backward", key: "z") { [weak self] in
             if let id = e.ledger.lastAppliedOverall()?.itemId {

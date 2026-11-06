@@ -18,3 +18,6 @@ A tool that moves your files on its own must never lose anything and must earn t
 - Users can watch a week of proposals before switching to auto.
 - Thresholds are config (`autoThreshold`, `trashThreshold`), not code.
 - Features that act on their own (expiry, auto-filing, Smart Filing) must express themselves as decisions with a confidence and go through the same `decide → execute → event` path.
+
+## Amendment (2026-11-05): looking at kept items again
+"Never re-filed" stays true of anything automatic. When you ask (`landfall rescan --kept`, or Review Kept Items in the menu), Landfall re-judges kept items with today's rules and may propose a home. Those proposals carry an `askFirst` flag: they never execute on their own in any mode, the flag survives re-checks, and Keep returns the item to kept. Only a click moves them.

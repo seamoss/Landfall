@@ -214,6 +214,25 @@ public final class Engine: ClassifierContext {
         }
     }
 
+    /// Re-judge items you kept, with today's rules. Anything that now has a home becomes a proposal
+    /// flagged `askFirst`: it waits for your click even in auto mode, because you kept it on purpose
+    /// (ADR 0003). Keep puts it back. Rules only — nothing is sent to Smart Filing.
+    @discardableResult
+    public func reviewKept(root: String? = nil) -> [(name: String, decision: Decision, status: String)] {
+        var out: [(String, Decision, String)] = []
+        for it in ledger.items(statuses: ["kept"]) where fileExists(it.path) {
+            guard let loc = locate(it.path), root == nil || loc.root.name == root,
+                  var f = Inspector.full(URL(fileURLWithPath: it.path)) else { continue }
+            enrich(&f, firstSeen: it.firstSeen)
+            var d = classifier.classify(f, root: loc.root)
+            guard d.action == .move || d.action == .trash else { continue }
+            d.flags.append(Decision.askFirst)
+            decide(it.id, path: it.path, d)
+            out.append((it.name, d, ledger.item(it.id)?.status ?? "?"))
+        }
+        return out.sorted { $0.0 < $1.0 }
+    }
+
     @discardableResult
     func process(itemId: Int64, url: URL, root: RootConfig) -> Decision? {
         guard var f = Inspector.full(url) else {
@@ -245,7 +264,13 @@ public final class Engine: ClassifierContext {
         return d
     }
 
-    func decide(_ id: Int64, path: String, _ d: Decision) {
+    func decide(_ id: Int64, path: String, _ decision: Decision) {
+        var d = decision
+        // A proposal made from a kept item stays ask-first when it's re-judged (hourly recheck, scan --recheck).
+        if let prior = ledger.item(id), prior.status == "proposed", prior.decision?.flags.contains(Decision.askFirst) == true,
+           !d.flags.contains(Decision.askFirst) {
+            d.flags.append(Decision.askFirst)
+        }
         let name = (path as NSString).lastPathComponent
         let alreadyAlerted = ledger.item(id)?.decision?.flags.contains("alert") == true
         switch d.action {
@@ -284,7 +309,7 @@ public final class Engine: ClassifierContext {
     }
 
     func shouldExecute(_ d: Decision) -> Bool {
-        guard config.mode == .auto else { return false }
+        guard config.mode == .auto, !d.flags.contains(Decision.askFirst) else { return false }
         switch d.action {
         case .trash: return d.confidence >= config.trashThreshold
         case .move: return d.confidence >= config.autoThreshold
@@ -609,6 +634,11 @@ public final class Engine: ClassifierContext {
 
     /// Follow filed items via bookmarks so `where` stays right after you move things yourself.
     public func reconcile() {
+        // Items that were never filed (waiting, held, proposed, kept) but whose file has since gone.
+        for it in ledger.items(statuses: ["pending", "held", "proposed", "kept", "ignored"])
+        where pending[it.path] == nil && !fileExists(it.path) {
+            departed(it.path)
+        }
         for it in ledger.items(statuses: ["filed", "elsewhere"]) {
             guard let b = it.bookmark else { continue }
             guard let now = Mover.resolve(b) else {
