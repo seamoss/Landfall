@@ -6,6 +6,26 @@
     <description>Landfall updates</description>
     <language>en</language>
     <item>
+      <title>Landfall 0.7.1</title>
+      <pubDate>Fri, 06 Nov 2026 04:21:19 -0000</pubDate>
+      <sparkle:version>202611052020</sparkle:version>
+      <sparkle:shortVersionString>0.7.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>https://github.com/seamoss/Landfall/releases/tag/v0.7.1</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b><code>landfall rescan</code></b> re-judges everything waiting with today&#x27;s rules and clears out entries for files that have gone or been trashed. <b><code>--kept</code></b>, or <b>Review Kept Items</b> in the menu, suggests homes for things you kept. Those suggestions always wait for your click, even in Auto mode, and Keep puts them back.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Items that were never filed (waiting, held, proposed, kept) no longer linger in the ledger after their file is deleted or trashed.</li>
+<li>A toast&#x27;s warning line (e.g. &quot;image isn&#x27;t signed — the app inside is checked when opened&quot;) was cut off mid-sentence and overlapped the line below; it now wraps to two lines.</li>
+</ul>
+      ]]></description>
+      <enclosure url="https://github.com/seamoss/Landfall/releases/download/v0.7.1/Landfall-0.7.1.dmg" type="application/octet-stream" sparkle:edSignature="MHIG6U1mDAC90GJVdJ/OX3fhhfHOjBU1NieR9IfoxQrLP5wUPmTApI1hokM911PAJcwFWvBtj72p5VqI5XT0DA==" length="4685669"/>
+    </item>
+    <item>
       <title>Landfall 0.7.0</title>
       <pubDate>Fri, 06 Nov 2026 02:36:08 -0000</pubDate>
       <sparkle:version>202611051835</sparkle:version>

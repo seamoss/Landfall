@@ -5,6 +5,8 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-05
+
 ### Added
 - **`landfall rescan`** re-judges everything waiting with today's rules and clears out entries for files that have gone or been trashed. **`--kept`**, or **Review Kept Items** in the menu, suggests homes for things you kept. Those suggestions always wait for your click, even in Auto mode, and Keep puts them back.
 
