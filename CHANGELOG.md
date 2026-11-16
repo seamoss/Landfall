@@ -6,6 +6,7 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 ## [Unreleased]
 
 ### Added
+- **Ignored folders**: a hard "never touch" list (Settings › Folders, `landfall ignore add <folder>`, or `"ignore"` in the config). Nothing inside them is watched, filed, organized, measured by the Space Report or cleaned, and nothing is moved into them; every move is checked against the list.
 - **Organize Desktop…** in the menu, and `landfall organize`: everything in the Desktop's dated folders, each with a suggestion to file it into Documents for good, send it to the Trash, or leave it. Choose per item or per day, Apply, and Undo All if you change your mind. The last week's folders start as Leave.
 
 - **Space Report window**: opens at once and fills in as each folder is measured, then lists everything with idle projects ticked: Move to Trash…, Show in Finder, Measure Again, and how idle counts as idle. The weekly toast's Show report opens it too.

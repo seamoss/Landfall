@@ -101,6 +101,7 @@ public struct Classifier {
         if name == "Icon\r" { return "folder icon" }
         if Self.partialExts.contains(url.pathExtension.lowercased()) { return "download in progress" }
         if root.neverTouch.contains(name) { return "listed in neverTouch" }
+        if let ignored = config.ignoredFolder(containing: path) { return "in \(Paths.pretty(ignored)), which you told Landfall to ignore" }
         if let shelf = config.recentShelf, normalize(shelf) == path { return "recent shelf" }
         if path == config.libraryURL.path { return "the library itself" }
         if root.role == .library && isDir { return "library folder" }

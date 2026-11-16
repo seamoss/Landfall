@@ -43,9 +43,10 @@ final class SpaceReportModel: ObservableObject {
         selected = []
         status = ""
         let roots = roots
+        let ignore = engine.config.ignore
         Log.info("space report: measuring \(roots.map { Paths.pretty($0.path) }.joined(separator: ", "))")
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let all = Space.scan(roots) { hit in
+            let all = Space.scan(roots, ignore: ignore) { hit in
                 guard hit.bytes > 1 << 20 else { return }
                 DispatchQueue.main.async { self?.hits.append(hit) }
             }.filter { $0.bytes > 1 << 20 }
@@ -73,7 +74,7 @@ final class SpaceReportModel: ObservableObject {
         var freed: Int64 = 0
         var failed = 0
         for h in chosen {
-            if (try? Mover.trash(URL(fileURLWithPath: h.path))) != nil {
+            if (try? engine.guardIgnored(h.path)) != nil, (try? Mover.trash(URL(fileURLWithPath: h.path))) != nil {
                 freed += h.bytes
                 hits.removeAll { $0.path == h.path }
             } else {

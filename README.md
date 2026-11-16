@@ -36,13 +36,15 @@ Each folder's role, timing and destination are adjustable in Settings › Folder
 - **Suggest** (`review`): every decision waits for you in the menu bar.
 - **Auto**: confident decisions happen on their own — moves at ≥ 85% confidence, trashing at ≥ 90%. The rest wait for you.
 
+**Ignored folders** (Settings › Folders, or `landfall ignore add ~/Documents/Dev/Setl`) are a hard stop: nothing inside them is watched, filed, organized, measured by the Space Report or cleaned, and nothing is ever moved into them. The check sits where every move happens, so no feature can get around it. Undo still works, because it only reverses something you asked for.
+
 "Remove" always means the macOS Trash, every action can be undone, and anything you undo or drag back is left alone for good ([ADR 0003](docs/adr/0003-safety-model.md)).
 
 ### What it recognizes
 
 Checked in this order; the first match decides ([ADR 0004](docs/adr/0004-ordered-deterministic-rules.md)):
 
-1. **Ignored:** hidden files, partial downloads, anything tagged *Keep* in Finder, folders you exclude.
+1. **Ignored:** hidden files, partial downloads, anything tagged *Keep* in Finder, and your **ignored folders**: everything inside them is off-limits to all of Landfall, see below.
 2. **Credentials** — `.p12`, `.pem`, `.env`, `client_secret*.json`, private keys, API tokens, recovery codes → `_Sensitive`, with an alert and an offer to import into 1Password.
 3. **Your rules.**
 4. **Duplicates** of files Landfall already tracks, and identical browser copies (`name (2).pdf`) → Trash.
@@ -132,6 +134,7 @@ landfall where invoice               # find something by name
 landfall search installer portal     # names, document text, text in screenshots
 landfall review                      # decisions waiting for you
 landfall rescan --kept               # look again at everything waiting, and suggest homes for kept items
+landfall ignore add ~/Documents/Dev/Setl   # never touch this folder, for anything
 landfall apply --all                 # accept them
 landfall undo                        # reverse the last move or trash
 landfall mode auto                   # shadow | review | auto
@@ -149,6 +152,7 @@ landfall space --trash --idle 30 --yes   # clear rebuildable folders in idle pro
 {
   "mode": "auto",
   "autoFileSeconds": 15,
+  "ignore": ["~/Documents/Dev/Setl"],
   "rules": [
     { "name": "Bike manuals", "nameRegex": "(?i)(vulcan|carburetor)", "to": "Personal/Vehicles" },
     { "name": "Acme calls", "participantsAny": ["Jane Doe"], "to": "Meetings/Acme/{yyyy-mm}", "rename": "{date} {title}" }

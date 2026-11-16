@@ -9,6 +9,7 @@ landfall — watches Downloads, Desktop and Documents and files what lands there
 
   landfall init [--force]              write the starter config (~/.config/landfall/config.json)
   landfall scan [--root R] [--recheck] classify everything now (respects mode)
+  landfall ignore [add|remove <folder…>]   folders Landfall never touches (watching, filing, Space Report, cleaning)
   landfall organize [--apply] [--all]  sort the Desktop's dated folders: into Documents for good, or the Trash
                                        (the last week's folders are left unless --all)
   landfall rescan [--root R] [--kept]  re-judge everything waiting and clear out entries for files that are gone;
@@ -170,6 +171,27 @@ case "scan", "rescan":
     if e.config.mode == .shadow {
         print(dim("\nShadow mode: nothing was moved. `landfall mode auto` to let it act, or `landfall apply` per item."))
     }
+
+case "ignore":
+    // Folders Landfall never touches. Edits the config; the running app picks it up within seconds.
+    var c = (try? Config.load()) ?? .standard
+    let sub = args.first ?? "list"
+    let paths = args.dropFirst().map { Paths.pretty(normalize(Paths.expand($0))) }
+    switch sub {
+    case "add":
+        guard !paths.isEmpty else { die("usage: landfall ignore add <folder…>") }
+        for p in paths where !c.ignore.map(normalize).contains(normalize(p)) {
+            guard FileManager.default.fileExists(atPath: normalize(p)) else { die("no such folder: \(p)") }
+            c.ignore.append(p)
+        }
+    case "remove":
+        guard !paths.isEmpty else { die("usage: landfall ignore remove <folder…>") }
+        c.ignore.removeAll { i in paths.contains { normalize($0) == normalize(i) } }
+    case "list": break
+    default: die("usage: landfall ignore [list | add <folder…> | remove <folder…>]")
+    }
+    if sub != "list" { do { try c.save() } catch { die("\(error)") } }
+    print(c.ignore.isEmpty ? "No ignored folders." : c.ignore.map { "  \($0)" }.joined(separator: "\n"))
 
 case "organize":
     // Everything in the Desktop's dated folders: into the library for good, to the Trash, or left.
@@ -437,7 +459,8 @@ case "space":
     let idle = Double(option("--idle") ?? "30") ?? 30
     let roots = args.isEmpty ? [URL(fileURLWithPath: Paths.home + "/Documents/Dev")] : args.map { URL(fileURLWithPath: Paths.expand($0)) }
     print(dim("Scanning \(roots.map { Paths.pretty($0.path) }.joined(separator: ", "))…"))
-    let hits = Space.scan(roots).filter { $0.bytes > 1 << 20 }
+    let spaceEngine = makeEngine()
+    let hits = Space.scan(roots, ignore: spaceEngine.config.ignore).filter { $0.bytes > 1 << 20 }
     var total: Int64 = 0
     var eligible: [SpaceHit] = []
     for h in hits {
@@ -452,7 +475,7 @@ case "space":
     if doTrash {
         guard yes else { die("add --yes to move those \(eligible.count) folders to the Trash") }
         for h in eligible {
-            do { _ = try Mover.trash(URL(fileURLWithPath: h.path)); print("🗑  \(Paths.pretty(h.path))") } catch { print("✗ \(h.path): \(error)") }
+            do { try spaceEngine.guardIgnored(h.path); _ = try Mover.trash(URL(fileURLWithPath: h.path)); print("🗑  \(Paths.pretty(h.path))") } catch { print("✗ \(h.path): \(error)") }
         }
     }
 

@@ -118,7 +118,7 @@ enum Performer {
             return "Undid \(n) of \(m.relatedIds.count)"
         case .cleanSpace:
             var freed = 0
-            for p in m.paths where (try? Mover.trash(URL(fileURLWithPath: p))) != nil { freed += 1 }
+            for p in m.paths where (try? engine.guardIgnored(p)) != nil && (try? Mover.trash(URL(fileURLWithPath: p))) != nil { freed += 1 }
             return "Moved \(freed) folders to the Trash"
         case .showReport:
             if let agent = Agent.shared { agent.showSpaceWindow() } else { run("/usr/bin/open", ["-t", url.path]) }
