@@ -254,6 +254,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if fileExists(it.path) {
             sub.addItem(ActionItem("Open", symbol: "arrow.up.forward.app") { NSWorkspace.shared.open(url) })
             sub.addItem(ActionItem("Show in Finder", symbol: "folder") { NSWorkspace.shared.activateFileViewerSelecting([url]) })
+            if ["held", "kept", "filed", "elsewhere", "proposed"].contains(it.status) { sub.addItem(fileToMenu(it)) }
         }
         if engine.ledger.lastApplied(it.id) != nil {
             sub.addItem(ActionItem("Undo", symbol: "arrow.uturn.backward") { [weak self] in _ = try? self?.engine.undo(it.id) })
@@ -261,6 +262,47 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if sub.items.isEmpty { sub.addItem(ActionItem(Paths.pretty(it.path))) }
         mi.submenu = sub
         return mi
+    }
+
+    /// "File To ▸" your most-used folders lately, or one you choose.
+    func fileToMenu(_ it: Item) -> NSMenuItem {
+        let mi = ActionItem("File To", symbol: "folder.badge.plus")
+        let sub = NSMenu()
+        let here = (it.path as NSString).deletingLastPathComponent
+        let recent = engine.ledger.recentFolders(since: Date().addingTimeInterval(-60 * 86400), limit: 8)
+            .filter { $0 != here && fileExists($0) && engine.config.neverTouchFolder(containing: $0) == nil }
+            .prefix(6)
+        for dir in recent {
+            let item = ActionItem(Self.place(dir + "/x")) { [weak self] in self?.fileManually(it, into: dir) }
+            item.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
+            sub.addItem(item)
+        }
+        if !recent.isEmpty { sub.addItem(.separator()) }
+        sub.addItem(ActionItem("Choose Folder…", symbol: "folder.badge.questionmark") { [weak self] in
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.canCreateDirectories = true
+            panel.prompt = "File Here"
+            panel.message = "Where should \(it.name) go?"
+            panel.directoryURL = self?.engine.config.libraryURL
+            NSApp.activate(ignoringOtherApps: true)
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            self?.fileManually(it, into: url.path)
+        })
+        mi.submenu = sub
+        return mi
+    }
+
+    func fileManually(_ it: Item, into dir: String) {
+        do {
+            let done = try engine.fileManually(it.id, into: dir)
+            notify("Landfall · Filed", "\(done.name) → \(Self.place(done.path))")
+        } catch {
+            Log.error("manual filing failed — \(it.name): \(error.localizedDescription)")
+            notify("Landfall · Couldn't file \(it.name)", error.localizedDescription)
+        }
+        refreshBadge()
     }
 
     func reviewItem(_ it: Item) -> NSMenuItem {
@@ -274,6 +316,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             _ = try? self?.engine.apply(it.id)
             self?.refreshBadge()
         })
+        sub.addItem(fileToMenu(it))
         sub.addItem(ActionItem("Keep Where It Is", symbol: "pin") { [weak self] in
             try? self?.engine.keep(it.id)
             self?.refreshBadge()

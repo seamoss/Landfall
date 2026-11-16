@@ -114,7 +114,7 @@ From the command line: `landfall organize` previews, `--apply` does the suggeste
 
 ## The menu and Settings
 
-The menu bar glyph shows a count when decisions are waiting. The menu lists what needs a decision (with Apply All), what landed recently and where it went, and tools: Smart File unplaced items, import credentials to 1Password, Scan Now (⌘R), Review Kept Items, Organize Desktop…, Space Report, Undo Last Action (⌘Z), Mode, Settings… (⌘,).
+The menu bar glyph shows a count when decisions are waiting. The menu lists what needs a decision (with Apply All), what landed recently and where it went (each with **File To ▸** your most-used folders or Choose Folder…, for anything left in place or filed somewhere you'd rather it wasn't), and tools: Smart File unplaced items, import credentials to 1Password, Scan Now (⌘R), Review Kept Items, Organize Desktop…, Space Report, Undo Last Action (⌘Z), Mode, Settings… (⌘,).
 
 Settings has four panes; changes apply immediately:
 

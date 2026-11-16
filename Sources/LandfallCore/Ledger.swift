@@ -208,6 +208,19 @@ public final class Ledger {
         return rows("SELECT * FROM events WHERE ts>=? AND type IN (\(q)) ORDER BY id", [since] + types).map(Event.init)
     }
 
+    /// Folders things were filed into lately (moves that weren't undone), most used first.
+    public func recentFolders(since: Date, limit: Int) -> [String] {
+        var counts: [String: (n: Int, last: Date)] = [:]
+        for e in events(since: since, types: ["moved", "corrected"]) where !e.undone {
+            guard let dst = e.dst else { continue }
+            let dir = (dst as NSString).deletingLastPathComponent
+            let c = counts[dir] ?? (0, e.ts)
+            counts[dir] = (c.n + 1, max(c.last, e.ts))
+        }
+        return counts.sorted { $0.value.n != $1.value.n ? $0.value.n > $1.value.n : $0.value.last > $1.value.last }
+            .prefix(limit).map(\.key)
+    }
+
     public func lastApplied(_ itemId: Int64) -> Event? {
         rows("""
             SELECT * FROM events WHERE item_id=? AND applied=1 AND undone=0 AND type IN ('moved','trashed')

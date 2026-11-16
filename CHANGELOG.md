@@ -6,6 +6,7 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 ## [Unreleased]
 
 ### Added
+- **File To** in the menu, for anything Landfall left in place ("Staying put", kept, waiting for you) or already filed: your most-used folders lately, or **Choose Folder…**. It's a normal recorded, undoable move, and filing similar things into the same folder twice makes Landfall offer a rule.
 - **Never Touch**: a hard list of folders Landfall stays out of (Settings › Folders, `landfall never-touch add <folder>`, or `"neverTouch"` in the config). Nothing inside them is watched, filed, organized, measured by the Space Report or cleaned, and nothing is moved into them; every move is checked against the list.
 - **Organize Desktop…** in the menu, and `landfall organize`: everything in the Desktop's dated folders, each with a suggestion to file it into Documents for good, send it to the Trash, or leave it. Choose per item or per day, Apply, and Undo All if you change your mind. The last week's folders start as Leave.
 

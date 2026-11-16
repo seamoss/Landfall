@@ -545,7 +545,9 @@ public final class Engine: ClassifierContext {
     func learn(fromCorrectionInto folder: String) {
         let lib = config.libraryURL.path + "/"
         guard folder.hasPrefix(lib) else { return }
-        let ids = Set(ledger.events(since: Date(timeIntervalSince1970: 0), types: ["corrected"])
+        // Your corrections, and things you filed there by hand: both say "this kind of thing goes here".
+        let ids = Set(ledger.events(since: Date(timeIntervalSince1970: 0), types: ["corrected", "moved"])
+            .filter { ($0.type == "corrected" || $0.rule == "manual") && !$0.undone }
             .filter { ($0.dst as NSString?)?.deletingLastPathComponent == folder }.map(\.itemId))
         let facts = ids.compactMap { ledger.item($0) }.filter { fileExists($0.path) }
             .compactMap { Inspector.full(URL(fileURLWithPath: $0.path), hash: false) }
@@ -563,6 +565,22 @@ public final class Engine: ClassifierContext {
 
     public func declineRule(_ p: RuleLearner.Proposal) {
         ledger.setMeta("rule:" + p.key, "declined")
+    }
+
+    /// File an item into a folder you chose. Recorded and undoable like any move; twice into the same
+    /// folder with similar things and Landfall offers to make it a rule.
+    @discardableResult
+    public func fileManually(_ id: Int64, into folder: String) throws -> Item {
+        guard let it = ledger.item(id) else { throw LandfallError.action("no item #\(id)") }
+        guard fileExists(it.path) else { throw LandfallError.action("\(it.name) is no longer at \(Paths.pretty(it.path))") }
+        let dest = normalize(folder)
+        guard (it.path as NSString).deletingLastPathComponent != dest else { return it }
+        pending[it.path] = nil
+        let d = Decision(action: .move, destination: dest, confidence: 1, rule: "manual",
+                         reason: "you filed it in \(Paths.pretty(dest))")
+        try execute(id, path: it.path, d)
+        learn(fromCorrectionInto: dest)
+        return ledger.item(id)!
     }
 
     /// File (or trash) an item right now, whatever the mode — you asked for it.

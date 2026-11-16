@@ -176,3 +176,54 @@ final class RecentListTests: XCTestCase {
         XCTAssertEqual(e.ledger.clearSettledFromRecent(), 0, "already cleared")
     }
 }
+
+final class ManualFilingTests: XCTestCase {
+    var s: Sandbox!
+
+    override func setUpWithError() throws {
+        s = try Sandbox()
+        s.config.mode = .auto
+    }
+
+    func testHeldItemCanBeFiledByHandAndUndone() throws {
+        let e = try s.engine()
+        let u = try s.write(s.downloads, "notes.xyz", "scratch")
+        e.scanNow()
+        let it = e.ledger.search("notes.xyz").first!
+        XCTAssertEqual(it.status, "held")
+
+        let dest = s.lib("Projects/Boat")
+        let done = try e.fileManually(it.id, into: dest)
+        XCTAssertEqual(done.status, "filed")
+        XCTAssertEqual(done.path, normalize(dest + "/notes.xyz"))
+        XCTAssertEqual(done.decision?.rule, "manual")
+        XCTAssertFalse(fileExists(u.path))
+        XCTAssertEqual(e.ledger.recentFolders(since: .distantPast, limit: 3), [normalize(dest)])
+
+        _ = try e.undo(it.id)
+        XCTAssertTrue(fileExists(u.path))
+        XCTAssertTrue(e.ledger.recentFolders(since: .distantPast, limit: 3).isEmpty, "undone moves don't count")
+    }
+
+    func testNeverTouchStillApplies() throws {
+        s.config.neverTouch = [s.lib("Vault")]
+        let e = try s.engine()
+        let u = try s.write(s.downloads, "notes.xyz", "scratch")
+        e.scanNow()
+        let it = e.ledger.search("notes.xyz").first!
+        XCTAssertThrowsError(try e.fileManually(it.id, into: s.lib("Vault/2026")))
+        XCTAssertTrue(fileExists(u.path))
+    }
+
+    func testFilingTheSameKindByHandTwiceOffersARule() throws {
+        let e = try s.engine()
+        var offered: RuleLearner.Proposal?
+        e.onRuleProposal = { offered = $0 }
+        try s.write(s.downloads, "Boat Survey March.xyz", "hull")
+        try s.write(s.downloads, "Boat Survey April.xyz", "deck")
+        e.scanNow()
+        for it in e.ledger.search("Boat Survey") { try e.fileManually(it.id, into: s.lib("Boat")) }
+        let p = try XCTUnwrap(offered, "two similar files filed by hand into one folder")
+        XCTAssertEqual(p.rule.to, "Boat")
+    }
+}
