@@ -8,8 +8,11 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 ### Added
 - **Organize Desktop…** in the menu, and `landfall organize`: everything in the Desktop's dated folders, each with a suggestion to file it into Documents for good, send it to the Trash, or leave it. Choose per item or per day, Apply, and Undo All if you change your mind. The last week's folders start as Leave.
 
+- **Space Report window**: opens at once and fills in as each folder is measured, then lists everything with idle projects ticked: Move to Trash…, Show in Finder, Measure Again, and how idle counts as idle. The weekly toast's Show report opens it too.
+
 ### Fixed
-- **Space Report** from the menu seemed to do nothing: sizing every rebuildable folder takes minutes and nothing said it had started. It now shows a "Measuring…" toast straight away, the menu item says it's measuring, a second click doesn't start a second scan, and a report you asked for always shows its result, however small.
+- **Space Report** from the menu seemed to do nothing: measuring takes minutes and nothing showed it had started. It now opens its window straight away, the menu item says it's measuring, and a second click doesn't start a second scan.
+- **Organize Desktop** opens straight away and shows its progress while it reads, applies and undoes, instead of pausing first.
 
 ### Changed
 - **New toast design**, matching Kronist: a colored bar down the left edge, ✕ on the title line, details with aligned icons, Keep on the right, and the countdown as a bar along the bottom edge in the card's color.

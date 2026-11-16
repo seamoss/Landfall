@@ -14,10 +14,28 @@ final class OrganizerModel: ObservableObject {
     @Published var applied: [Int64] = []
     @Published var status = ""
     @Published var busy = false
+    /// Reading or applying, with how far along: the window shows this instead of freezing.
+    @Published var progress: (done: Int, total: Int, verb: String, current: String)?
 
     init(engine: Engine) {
         self.engine = engine
         reload()
+    }
+
+    /// Work through `items` one per turn of the main run loop, so the window keeps drawing and the
+    /// ledger (main thread only) stays safe.
+    private func stepwise<T>(_ items: [T], verb: String, name: @escaping (T) -> String, each: @escaping (T) -> Void,
+                             finished: @escaping () -> Void) {
+        func step(_ i: Int) {
+            guard i < items.count else { progress = nil; busy = false; finished(); return }
+            progress = (i, items.count, verb, name(items[i]))
+            DispatchQueue.main.async {
+                each(items[i])
+                step(i + 1)
+            }
+        }
+        busy = true
+        step(0)
     }
 
     var cabinets: [String] {
@@ -28,8 +46,16 @@ final class OrganizerModel: ObservableObject {
     func entries(in cabinet: String) -> [OrganizerEntry] { entries.filter { $0.cabinet == cabinet } }
 
     func reload() {
-        entries = engine.organizerEntries()
-        choices = Dictionary(uniqueKeysWithValues: entries.map { ($0.path, defaultChoice($0)) })
+        let list = engine.organizerList()
+        var read: [OrganizerEntry] = []
+        entries = []
+        stepwise(list, verb: "Reading", name: { $0.url.lastPathComponent },
+                 each: { [engine] item in if let e = engine.organizerEntry(item.url, cabinet: item.cabinet) { read.append(e) } },
+                 finished: { [weak self] in
+                     guard let self else { return }
+                     self.entries = read
+                     self.choices = Dictionary(uniqueKeysWithValues: read.map { ($0.path, self.defaultChoice($0)) })
+                 })
     }
 
     func defaultChoice(_ e: OrganizerEntry) -> OrganizerChoice {
@@ -65,40 +91,43 @@ final class OrganizerModel: ObservableObject {
     }
 
     func apply() {
-        busy = true
+        let work = entries.filter { choice($0) != .leave }.map { ($0, choice($0)) }
         var done: [Int64] = []
         var failures: [String] = []
-        for e in entries where choice(e) != .leave {
+        status = ""
+        stepwise(work, verb: "Moving", name: { $0.0.name }, each: { [engine] item in
             do {
-                if let it = try engine.organize(e, choice(e)) { done.append(it.id) }
+                if let it = try engine.organize(item.0, item.1) { done.append(it.id) }
             } catch {
-                failures.append("\(e.name): \(error.localizedDescription)")
-                Log.error("organize failed — \(e.name): \(error.localizedDescription)")
+                failures.append("\(item.0.name): \(error.localizedDescription)")
+                Log.error("organize failed — \(item.0.name): \(error.localizedDescription)")
             }
-        }
-        let tidied = engine.tidyCabinets()
-        applied = done
-        Log.info("organizer: \(done.count) moved, \(failures.count) failed, \(tidied.count) empty folders removed")
-        status = "\(done.count) item\(done.count == 1 ? "" : "s") done"
-            + (tidied.isEmpty ? "" : " · \(tidied.count) empty folder\(tidied.count == 1 ? "" : "s") removed")
-            + (failures.isEmpty ? "" : " · \(failures.count) couldn't be moved (see the log)")
-        reload()
-        busy = false
+        }, finished: { [weak self] in
+            guard let self else { return }
+            let tidied = self.engine.tidyCabinets()
+            self.applied = done
+            Log.info("organizer: \(done.count) moved, \(failures.count) failed, \(tidied.count) empty folders removed")
+            self.status = "\(done.count) item\(done.count == 1 ? "" : "s") done"
+                + (tidied.isEmpty ? "" : " · \(tidied.count) empty folder\(tidied.count == 1 ? "" : "s") removed")
+                + (failures.isEmpty ? "" : " · \(failures.count) couldn't be moved (see the log)")
+            self.reload()
+        })
     }
 
     func undoAll() {
-        busy = true
         var failed = 0
-        for id in applied.reversed() {
+        let ids = Array(applied.reversed())
+        stepwise(ids, verb: "Undoing", name: { [engine] in engine.ledger.item($0)?.name ?? "#\($0)" }, each: { [engine] id in
             do { _ = try engine.undo(id) } catch {
                 failed += 1
                 Log.error("organizer undo failed — #\(id): \(error.localizedDescription)")
             }
-        }
-        status = failed == 0 ? "Undone — everything is back where it was" : "Undone, except \(failed) (see the log)"
-        applied = []
-        reload()
-        busy = false
+        }, finished: { [weak self] in
+            guard let self else { return }
+            self.status = failed == 0 ? "Undone — everything is back where it was" : "Undone, except \(failed) (see the log)"
+            self.applied = []
+            self.reload()
+        })
     }
 
     func chooseFolder(for e: OrganizerEntry) {
@@ -128,7 +157,19 @@ struct OrganizerView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if model.entries.isEmpty {
+            if let p = model.progress, p.verb == "Reading" {
+                VStack(spacing: 12) {
+                    ProgressView(value: Double(p.done), total: Double(max(p.total, 1)))
+                        .frame(width: 320)
+                    Text("Reading \(p.done + 1) of \(p.total) · \(p.current)")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .monospacedDigit()
+                        .frame(width: 420)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.entries.isEmpty {
                 ContentUnavailableView("Nothing to organize", systemImage: "checkmark.circle",
                                        description: Text("The Desktop's dated folders are empty."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -229,8 +270,14 @@ struct OrganizerView: View {
     private var footer: some View {
         let c = model.counts
         return HStack(spacing: 10) {
-            Text("File \(c.file) · Trash \(c.trash) · Leave \(c.leave)").monospacedDigit()
-            if !model.status.isEmpty { Text(model.status).foregroundStyle(.secondary).lineLimit(1) }
+            if let p = model.progress, p.verb != "Reading" {
+                ProgressView(value: Double(p.done), total: Double(max(p.total, 1))).frame(width: 140)
+                Text("\(p.verb) \(p.done + 1) of \(p.total) · \(p.current)")
+                    .monospacedDigit().lineLimit(1).truncationMode(.middle)
+            } else {
+                Text("File \(c.file) · Trash \(c.trash) · Leave \(c.leave)").monospacedDigit()
+                if !model.status.isEmpty { Text(model.status).foregroundStyle(.secondary).lineLimit(1) }
+            }
             Spacer()
             if !model.applied.isEmpty { Button("Undo All") { model.undoAll() } }
             Button("Apply") { model.apply() }

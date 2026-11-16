@@ -172,7 +172,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         menu.addItem(ActionItem("Organize Desktop…", symbol: "square.grid.3x1.folder.badge.plus") { OrganizerWindowController.show(engine: e) })
         let space = ActionItem("Space Report", symbol: "internaldrive") { Agent.shared?.weeklySpaceReport(force: true) }
-        if let started = Agent.shared?.spaceScanStarted {
+        if case .measuring(let started) = Agent.shared?.space.phase {
             _ = space.detail("Measuring… (\(max(1, Int(Date().timeIntervalSince(started) / 60))) min)")
         }
         menu.addItem(space)

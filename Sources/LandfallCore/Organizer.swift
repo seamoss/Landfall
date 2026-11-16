@@ -58,13 +58,13 @@ extension Engine {
 
     /// Everything in the filing folders, oldest folder first, each with a suggestion.
     public func organizerEntries() -> [OrganizerEntry] {
-        var out: [OrganizerEntry] = []
-        for cab in cabinets() {
-            for url in organizerItems(in: cab) {
-                if let e = organizerEntry(url, cabinet: cab.lastPathComponent) { out.append(e) }
-            }
-        }
-        return out
+        organizerList().compactMap { organizerEntry($0.url, cabinet: $0.cabinet) }
+    }
+
+    /// What's in the filing folders, without looking inside anything yet (fast), so a window can
+    /// show progress while `organizerEntry` reads each one.
+    public func organizerList() -> [(url: URL, cabinet: String)] {
+        cabinets().flatMap { cab in organizerItems(in: cab).map { (url: $0, cabinet: cab.lastPathComponent) } }
     }
 
     /// Files, and folders Landfall filed as one item (projects, apps); other folders are layout and get walked.
@@ -85,7 +85,7 @@ extension Engine {
         return out
     }
 
-    func organizerEntry(_ url: URL, cabinet: String) -> OrganizerEntry? {
+    public func organizerEntry(_ url: URL, cabinet: String) -> OrganizerEntry? {
         let path = normalize(url.path)
         guard let loc = locate(path), var f = Inspector.full(URL(fileURLWithPath: path)) else { return nil }
         let tracked = ledger.activeItem(atPath: path)

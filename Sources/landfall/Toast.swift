@@ -121,7 +121,7 @@ enum Performer {
             for p in m.paths where (try? Mover.trash(URL(fileURLWithPath: p))) != nil { freed += 1 }
             return "Moved \(freed) folders to the Trash"
         case .showReport:
-            run("/usr/bin/open", ["-t", url.path])
+            if let agent = Agent.shared { agent.showSpaceWindow() } else { run("/usr/bin/open", ["-t", url.path]) }
         }
         return nil
     }
@@ -402,18 +402,19 @@ final class Toast: NSObject {
     }
 
     /// Render a toast to PNG without showing it (for checking layouts).
-    static func snapshot(_ m: ToastModel, to url: URL, dark: Bool, progress: Double = 0.6, status text: String? = nil) throws {
-        NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+    /// `dark` nil follows the Mac's light/dark setting.
+    static func snapshot(_ m: ToastModel, to url: URL, dark: Bool? = nil, progress: Double = 0.6, status text: String? = nil) throws {
+        if let dark { NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua) }
         let state = ToastState(model: m)
         state.progress = progress
         state.status = text ?? (m.autoFile ? "files in 12s" : "")
         let view = NSHostingView(rootView: ToastCard(state: state, live: false))
-        view.appearance = NSApplication.shared.appearance
+        view.appearance = NSApplication.shared.effectiveAppearance
         view.setFrameSize(view.fittingSize)
         view.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw LandfallError.action("render failed") }
-        NSApplication.shared.appearance?.performAsCurrentDrawingAppearance {
+        NSApplication.shared.effectiveAppearance.performAsCurrentDrawingAppearance {
             view.cacheDisplay(in: view.bounds, to: rep)
         }
         guard let png = rep.representation(using: .png, properties: [:]) else { throw LandfallError.action("encode failed") }

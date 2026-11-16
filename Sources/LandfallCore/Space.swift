@@ -1,7 +1,8 @@
 import Foundation
 
 /// Rebuildable dependency and build folders inside code projects.
-public struct SpaceHit {
+public struct SpaceHit: Identifiable, Equatable {
+    public var id: String { path }
     public var path: String
     public var kind: String
     public var bytes: Int64
@@ -14,7 +15,8 @@ public struct SpaceHit {
 public enum Space {
     static let rebuildable: Set<String> = ["node_modules", ".venv", "venv", ".next", ".turbo", ".nuxt", ".svelte-kit", ".parcel-cache"]
 
-    public static func scan(_ roots: [URL], now: Date = Date()) -> [SpaceHit] {
+    /// `progress` is called (on the scanning thread) with each folder as soon as it's measured.
+    public static func scan(_ roots: [URL], now: Date = Date(), progress: ((SpaceHit) -> Void)? = nil) -> [SpaceHit] {
         var hits: [SpaceHit] = []
         var idle: [String: Double?] = [:]
         for root in roots {
@@ -41,8 +43,10 @@ public enum Space {
                 en.skipDescendants()
                 let repo = enclosingRepo(parent.path)
                 if let repo, idle[repo] == nil { idle[repo] = idleDays(repo, now: now) }
-                hits.append(SpaceHit(path: u.path, kind: kind, bytes: Inspector.duBytes(u.path), repo: repo,
-                                     idleDays: repo.flatMap { idle[$0] ?? nil }, reportOnly: reportOnly))
+                let hit = SpaceHit(path: u.path, kind: kind, bytes: Inspector.duBytes(u.path), repo: repo,
+                                   idleDays: repo.flatMap { idle[$0] ?? nil }, reportOnly: reportOnly)
+                hits.append(hit)
+                progress?(hit)
             }
         }
         return hits.sorted { $0.bytes > $1.bytes }

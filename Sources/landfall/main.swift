@@ -175,17 +175,8 @@ case "organize":
     // Everything in the Desktop's dated folders: into the library for good, to the Trash, or left.
     let e = makeEngine()
     if let out = option("--snapshot") {
-        // Lists only draw on screen: show the window briefly and capture just it.
-        let app = NSApplication.shared
-        app.setActivationPolicy(.accessory)
-        app.appearance = NSAppearance(named: flag("--dark") ? .darkAqua : .aqua)
         let wc = OrganizerWindowController(engine: e)
-        wc.showWindow(nil)
-        RunLoop.main.run(until: Date().addingTimeInterval(1.5))
-        let id = wc.window?.windowNumber ?? 0
-        run("/usr/sbin/screencapture", ["-x", "-o", "-l", "\(id)", out])
-        print("wrote \(out)")
-        exit(0)
+        captureWindow(wc.window, to: out, until: { wc.model.progress == nil })
     }
     let all = flag("--all")
     let entries = e.organizerEntries().map { en in
@@ -435,6 +426,12 @@ case "suggest":
     }
 
 case "space":
+    if let out = option("--snapshot") {
+        let model = SpaceReportModel(engine: makeEngine())
+        let wc = SpaceReportWindowController(model: model)
+        model.start(asked: true)
+        captureWindow(wc.window, to: out, until: { !model.isMeasuring })
+    }
     let doTrash = flag("--trash")
     let yes = flag("--yes")
     let idle = Double(option("--idle") ?? "30") ?? 30
@@ -470,7 +467,6 @@ case "install":
 case "toast":
     guard let path = args.first else { die("usage: landfall toast <file> [--snapshot out.png] [--dark]") }
     let snapshot = option("--snapshot")
-    let dark = flag("--dark")
     let e = makeEngine()
     let url = URL(fileURLWithPath: normalize(args.first ?? path))
     guard fileExists(url.path) else { die("no such file: \(path)") }
@@ -478,7 +474,7 @@ case "toast":
     let tracked = e.ledger.activeItem(atPath: url.path)?.id
     guard let m = e.toastModel(for: url, itemId: tracked, editorLookup: editorInstalled) else { die("that item is ignored") }
     if let snapshot {
-        do { try Toast.snapshot(m, to: URL(fileURLWithPath: snapshot), dark: dark) } catch { die("\(error)") }
+        do { try Toast.snapshot(m, to: URL(fileURLWithPath: snapshot), dark: appearanceFlag()) } catch { die("\(error)") }
         print("kind     \(m.kind.label)\ntrust    \(m.trust.level.rawValue) — \(m.trust.summary)")
         print("dest     \(m.destinationLabel ?? "—")\nauto     \(m.autoFile ? "files when the countdown ends" : "no — just closes")")
         print("actions  " + m.actions.map { $0.confirm == nil ? $0.title : "\($0.title) [confirm]" }.joined(separator: " · "))
@@ -522,3 +518,25 @@ func printJSON(_ value: Any) {
     let data = (try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data("[]".utf8)
     print(String(decoding: data, as: UTF8.self))
 }
+
+/// Show a window, capture it a moment after opening (`<out>-early.png`) and again once `until` holds
+/// (`out`), then quit. Lists only draw on screen, so this can't render offscreen.
+func captureWindow(_ window: NSWindow?, to out: String, until done: @escaping () -> Bool) -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    if let dark = appearanceFlag() { app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua) }
+    window?.orderFrontRegardless()
+    let id = "\(window?.windowNumber ?? 0)"
+    let early = (out as NSString).deletingPathExtension + "-early.png"
+    RunLoop.main.run(until: Date().addingTimeInterval(2))
+    run("/usr/sbin/screencapture", ["-x", "-o", "-l", id, early])
+    let deadline = Date().addingTimeInterval(600)
+    while !done() && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.5)) }
+    RunLoop.main.run(until: Date().addingTimeInterval(1))
+    run("/usr/sbin/screencapture", ["-x", "-o", "-l", id, out])
+    print("wrote \(early)\nwrote \(out)")
+    exit(0)
+}
+
+/// --dark or --light for previews; neither follows the Mac's setting.
+func appearanceFlag() -> Bool? { flag("--dark") ? true : flag("--light") ? false : nil }
