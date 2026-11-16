@@ -400,16 +400,16 @@ struct FoldersTab: View {
                     set: { model.config.recentShelf = $0 ? "~/Desktop/Recent Landings" : nil }))
             }
             Section {
-                ForEach(model.config.ignore, id: \.self) { path in
+                ForEach(model.config.neverTouch, id: \.self) { path in
                     HStack {
                         Label(Paths.pretty(normalize(path)), systemImage: "nosign")
                         Spacer()
-                        Button("Remove") { model.config.ignore.removeAll { $0 == path } }
+                        Button("Remove") { model.config.neverTouch.removeAll { $0 == path } }
                     }
                 }
-                Button("Add Folder…") { addIgnored() }
+                Button("Add Folder…") { addNeverTouch() }
             } header: {
-                Text("Ignored Folders")
+                Text("Never Touch")
             } footer: {
                 Text("Landfall never watches, files, organizes, measures or cleans anything in these folders, and never moves anything into them.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -443,7 +443,7 @@ struct FoldersTab: View {
                     TextField("Trash unfiled items after N days (blank = never)", text: Binding(
                         get: { root.expireDays.map { String(Int($0)) } ?? "" },
                         set: { root.expireDays = Double($0) }))
-                    TextField("Never touch (comma-separated)", text: commaList($root.neverTouch))
+                    TextField("Don't file these folders (names, comma-separated)", text: commaList($root.neverTouch))
                 }
             }
         }
@@ -452,18 +452,18 @@ struct FoldersTab: View {
 }
 
 extension FoldersTab {
-    func addIgnored() {
+    func addNeverTouch() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
-        panel.prompt = "Ignore"
+        panel.prompt = "Never Touch"
         panel.message = "Landfall will never touch anything in the folders you choose."
         panel.directoryURL = URL(fileURLWithPath: Paths.home + "/Documents")
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
             let p = Paths.pretty(normalize(url.path))
-            if !model.config.ignore.map({ normalize($0) }).contains(normalize(url.path)) { model.config.ignore.append(p) }
+            if !model.config.neverTouch.map({ normalize($0) }).contains(normalize(url.path)) { model.config.neverTouch.append(p) }
         }
     }
 }

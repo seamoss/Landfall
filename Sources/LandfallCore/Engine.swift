@@ -319,18 +319,18 @@ public final class Engine: ClassifierContext {
 
     // MARK: - Actions
 
-    /// Refuse anything inside an ignored folder: every move and trash Landfall makes on its own or on
+    /// Refuse anything inside a Never Touch folder: every move and trash Landfall makes on its own or on
     /// your click comes through here (Undo, which you ask for to reverse something, doesn't).
-    public func guardIgnored(_ paths: String?...) throws {
+    public func guardNeverTouch(_ paths: String?...) throws {
         for p in paths.compactMap({ $0 }) {
-            if let ignored = config.ignoredFolder(containing: p) {
-                throw LandfallError.action("\(Paths.pretty(p)) is in \(Paths.pretty(ignored)), which Landfall is set to ignore")
+            if let off = config.neverTouchFolder(containing: p) {
+                throw LandfallError.action("\(Paths.pretty(p)) is in \(Paths.pretty(off)), which is on the Never Touch list")
             }
         }
     }
 
     public func execute(_ id: Int64, path: String, _ d: Decision) throws {
-        try guardIgnored(path, d.action == .move ? d.destination : nil)
+        try guardNeverTouch(path, d.action == .move ? d.destination : nil)
         let src = URL(fileURLWithPath: path)
         switch d.action {
         case .move:
@@ -509,7 +509,7 @@ public final class Engine: ClassifierContext {
     public func vault(_ id: Int64) throws {
         guard let it = ledger.item(id), fileExists(it.path) else { throw LandfallError.action("#\(id) isn't where Landfall last saw it") }
         try OnePassword.importDocument(URL(fileURLWithPath: it.path), vault: config.onePasswordVault)
-        try guardIgnored(it.path)
+        try guardNeverTouch(it.path)
         let trashed = try Mover.trash(URL(fileURLWithPath: it.path))
         pending[it.path] = nil
         ledger.update(id, ["status": "trashed", "path": trashed.path])

@@ -217,9 +217,10 @@ public struct Config: Codable {
     public var spaceRoots: [String]
     public var spaceIdleDays: Double
     public var folders: Folders
-    /// Folders Landfall never touches: not watched, filed, organized, measured or cleaned, and nothing
-    /// is moved into them. Paths, `~` allowed; everything inside counts.
-    public var ignore: [String]
+    /// Never Touch: folders Landfall never touches. Not watched, filed, organized, measured or cleaned,
+    /// and nothing is moved into them. Paths, `~` allowed; everything inside counts. (Each watched
+    /// folder's own `neverTouch` is different: names of top-level folders it simply doesn't file.)
+    public var neverTouch: [String]
     public var roots: [RootConfig]
     public var clients: [ClientConfig]
     public var rules: [RuleConfig]
@@ -246,7 +247,7 @@ public struct Config: Codable {
             spaceRoots: ["~/Documents/Dev"],
             spaceIdleDays: 30,
             folders: Folders(),
-            ignore: [],
+            neverTouch: [],
             roots: [
                 RootConfig(name: "downloads", path: "~/Downloads", role: .intake, graceSeconds: 300, expireDays: 30),
                 RootConfig(name: "desktop", path: "~/Desktop", role: .shelf, graceSeconds: 7200, useLastUsed: true,
@@ -272,10 +273,10 @@ public struct Config: Codable {
 
     public var libraryURL: URL { URL(fileURLWithPath: normalize(library)) }
 
-    /// The ignored folder `path` is in (or is), if any.
-    public func ignoredFolder(containing path: String) -> String? {
+    /// The Never Touch folder `path` is in (or is), if any.
+    public func neverTouchFolder(containing path: String) -> String? {
         let p = normalize(path)
-        return ignore.map(normalize).first { p == $0 || p.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }
+        return neverTouch.map(normalize).first { p == $0 || p.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }
     }
 
     public func root(named n: String) -> RootConfig? { roots.first { $0.name == n } }

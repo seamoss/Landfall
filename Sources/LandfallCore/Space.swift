@@ -16,19 +16,19 @@ public enum Space {
     static let rebuildable: Set<String> = ["node_modules", ".venv", "venv", ".next", ".turbo", ".nuxt", ".svelte-kit", ".parcel-cache"]
 
     /// `progress` is called (on the scanning thread) with each folder as soon as it's measured.
-    /// `ignore`: folders never measured or offered for cleaning (anything inside them is skipped).
-    public static func scan(_ roots: [URL], ignore: [String] = [], now: Date = Date(),
+    /// `neverTouch`: folders never measured or offered for cleaning (anything inside them is skipped).
+    public static func scan(_ roots: [URL], neverTouch: [String] = [], now: Date = Date(),
                             progress: ((SpaceHit) -> Void)? = nil) -> [SpaceHit] {
         var hits: [SpaceHit] = []
         var idle: [String: Double?] = [:]
-        let skip = ignore.map(normalize)
-        func ignored(_ p: String) -> Bool { let n = normalize(p); return skip.contains { n == $0 || n.hasPrefix($0 + "/") } }
-        for root in roots where !ignored(root.path) {
+        let skip = neverTouch.map(normalize)
+        func offLimits(_ p: String) -> Bool { let n = normalize(p); return skip.contains { n == $0 || n.hasPrefix($0 + "/") } }
+        for root in roots where !offLimits(root.path) {
             guard let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey],
                                                           options: [.skipsPackageDescendants]) else { continue }
             for case let u as URL in en {
                 guard (try? u.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
-                if ignored(u.path) { en.skipDescendants(); continue }
+                if offLimits(u.path) { en.skipDescendants(); continue }
                 let name = u.lastPathComponent
                 let parent = u.deletingLastPathComponent()
                 var kind: String?

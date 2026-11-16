@@ -1,9 +1,9 @@
 import XCTest
 @testable import LandfallCore
 
-/// Ignored folders are off-limits everywhere: not recorded, never a source or destination of a move,
+/// Never Touch folders are off-limits everywhere: not recorded, never a source or destination of a move,
 /// not measured or cleaned, not organized.
-final class IgnoreTests: XCTestCase {
+final class NeverTouchTests: XCTestCase {
     var s: Sandbox!
 
     override func setUpWithError() throws {
@@ -13,16 +13,16 @@ final class IgnoreTests: XCTestCase {
 
     func testNothingInsideIsRecordedOrMoved() throws {
         let kept = s.downloads.appendingPathComponent("Keepers")
-        s.config.ignore = [kept.path]
+        s.config.neverTouch = [kept.path]
         let e = try s.engine()
         let u = try s.write(kept, "Product Call.txt", tactiqHeader)
         e.scanNow()
         XCTAssertTrue(fileExists(u.path))
-        XCTAssertTrue(e.ledger.search("Keepers").isEmpty, "the ignored folder itself isn't tracked")
+        XCTAssertTrue(e.ledger.search("Keepers").isEmpty, "the folder itself isn't tracked")
         XCTAssertEqual(s.classify(u).action, .ignore)
     }
 
-    func testExecuteRefusesIgnoredSourceAndDestination() throws {
+    func testExecuteRefusesNeverTouchSourceAndDestination() throws {
         let e = try s.engine()
         let u = try s.write(s.downloads, "Product Call.txt", tactiqHeader)
         s.config.mode = .shadow
@@ -31,30 +31,30 @@ final class IgnoreTests: XCTestCase {
         let it = shadow.ledger.search("Product Call").first!
         // Destination inside an ignored folder: refused, file stays put.
         var c = shadow.config
-        c.ignore = [s.lib("Meetings")]
+        c.neverTouch = [s.lib("Meetings")]
         shadow.reload(c)
         XCTAssertThrowsError(try shadow.apply(it.id))
         XCTAssertTrue(fileExists(u.path))
         // Source inside an ignored folder: refused too.
-        c.ignore = [s.downloads.path]
+        c.neverTouch = [s.downloads.path]
         e.reload(c)
         XCTAssertThrowsError(try e.execute(it.id, path: u.path, Decision(action: .trash, confidence: 1, rule: "t", reason: "t")))
         XCTAssertTrue(fileExists(u.path))
     }
 
-    func testSpaceScanSkipsIgnoredFolders() throws {
+    func testSpaceScanSkipsNeverTouchFolders() throws {
         let dev = s.base.appendingPathComponent("Dev")
         try s.write(dev.appendingPathComponent("app/node_modules/pkg"), "index.js", String(repeating: "x", count: 4096))
         try s.write(dev.appendingPathComponent("keep/node_modules/pkg"), "index.js", String(repeating: "x", count: 4096))
         let all = Space.scan([dev]).map(\.path)
         XCTAssertEqual(all.count, 2)
-        let some = Space.scan([dev], ignore: [dev.appendingPathComponent("keep").path]).map(\.path)
+        let some = Space.scan([dev], neverTouch: [dev.appendingPathComponent("keep").path]).map(\.path)
         XCTAssertEqual(some.count, 1)
         XCTAssertTrue(some[0].contains("/app/"))
-        XCTAssertTrue(Space.scan([dev], ignore: [dev.path]).isEmpty, "ignoring the root ignores everything")
+        XCTAssertTrue(Space.scan([dev], neverTouch: [dev.path]).isEmpty, "a Never Touch root means nothing is measured")
     }
 
-    func testOrganizerSkipsIgnoredFilingFolders() throws {
+    func testOrganizerSkipsNeverTouchFilingFolders() throws {
         let i = s.config.roots.firstIndex { $0.name == "desktop" }!
         s.config.roots[i].filing = Filing(mode: .inPlace, layout: "{yyyy-mm-dd}")
         let e = try s.engine()
@@ -63,17 +63,17 @@ final class IgnoreTests: XCTestCase {
         let cabinet = try XCTUnwrap(e.cabinets().first)
         XCTAssertEqual(e.organizerEntries().count, 1)
         var c = e.config
-        c.ignore = [cabinet.path]
+        c.neverTouch = [cabinet.path]
         e.reload(c)
         XCTAssertTrue(e.organizerEntries().isEmpty)
         XCTAssertTrue(e.tidyCabinets().isEmpty)
     }
 
-    func testIgnoredFolderMatchesWholeNamesOnly() {
+    func testNeverTouchMatchesWholeFolderNamesOnly() {
         var c = Config.standard
-        c.ignore = ["/tmp/x/Dev"]
-        XCTAssertNotNil(c.ignoredFolder(containing: "/tmp/x/Dev"))
-        XCTAssertNotNil(c.ignoredFolder(containing: "/tmp/x/Dev/a/b.txt"))
-        XCTAssertNil(c.ignoredFolder(containing: "/tmp/x/Development/a.txt"))
+        c.neverTouch = ["/tmp/x/Dev"]
+        XCTAssertNotNil(c.neverTouchFolder(containing: "/tmp/x/Dev"))
+        XCTAssertNotNil(c.neverTouchFolder(containing: "/tmp/x/Dev/a/b.txt"))
+        XCTAssertNil(c.neverTouchFolder(containing: "/tmp/x/Development/a.txt"))
     }
 }

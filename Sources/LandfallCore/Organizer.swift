@@ -52,7 +52,7 @@ extension Engine {
             let kids = (try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
             out += kids.filter { Inspector.xattr($0.path, Classifier.cabinetMarker) != nil }
                 .map { URL(fileURLWithPath: normalize($0.path)) }
-                .filter { config.ignoredFolder(containing: $0.path) == nil }
+                .filter { config.neverTouchFolder(containing: $0.path) == nil }
         }
         return out.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
@@ -75,7 +75,7 @@ extension Engine {
                                                 options: [.skipsHiddenFiles])) ?? []
         var out: [URL] = []
         for k in kids.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-            if config.ignoredFolder(containing: k.path) != nil { continue }
+            if config.neverTouchFolder(containing: k.path) != nil { continue }
             let v = try? k.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
             let isDir = v?.isDirectory ?? false
             if !isDir || v?.isPackage == true || ledger.activeItem(atPath: normalize(k.path)) != nil {
