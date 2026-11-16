@@ -18,6 +18,8 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var timers: [DispatchSourceTimer] = []
     var configStamp: Date?
     var lastDigestDay = ""
+    /// A space scan measures every rebuildable folder with `du`; on a big Dev folder that takes minutes.
+    private(set) var spaceScanStarted: Date?
 
     var inBundle: Bool { Bundle.main.bundleIdentifier != nil }
 
@@ -276,16 +278,36 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             guard engine.config.spaceReport, cal.component(.weekday, from: now) == 2, cal.component(.hour, from: now) >= 9,
                   engine.ledger.meta("space-week") != week else { return }
         }
-        engine.ledger.setMeta("space-week", week)
         let roots = engine.config.spaceRoots.map { URL(fileURLWithPath: normalize($0)) }
+        if let started = spaceScanStarted {
+            // One scan at a time; say so instead of starting another.
+            if force { notify("Landfall · Space Report", "Still measuring (started \(Int(Date().timeIntervalSince(started) / 60)) min ago). The report appears when it's done.") }
+            return
+        }
+        engine.ledger.setMeta("space-week", week)
         let idle = engine.config.spaceIdleDays
+        spaceScanStarted = now
+        if force, let first = roots.first {
+            var m = ToastModel(itemId: nil, url: first, name: "Measuring \(roots.map { Paths.pretty($0.path) }.joined(separator: ", "))…",
+                               kind: .folder, subtitle: "Space Report", trust: TrustInfo(),
+                               suggestion: "Sizing every rebuildable folder (node_modules, .next, target…) takes a minute or two. The report appears here when it's done.",
+                               actions: [], decision: nil, editor: nil)
+            m.paths = []
+            toaster?.show(m)
+        }
+        Log.info("space report: scanning \(roots.map { Paths.pretty($0.path) }.joined(separator: ", "))")
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let hits = Space.scan(roots).filter { $0.bytes > 1 << 20 }
-            DispatchQueue.main.async { self?.showSpaceReport(hits, idle: idle) }
+            DispatchQueue.main.async {
+                let secs = Int(Date().timeIntervalSince(now))
+                Log.info("space report: \(hits.count) folders measured in \(secs)s")
+                self?.spaceScanStarted = nil
+                self?.showSpaceReport(hits, idle: idle, asked: force)
+            }
         }
     }
 
-    func showSpaceReport(_ hits: [SpaceHit], idle: Double) {
+    func showSpaceReport(_ hits: [SpaceHit], idle: Double, asked: Bool = false) {
         let total = hits.reduce(0) { $0 + $1.bytes }
         let eligible = hits.filter { !$0.reportOnly && ($0.idleDays ?? .infinity) >= idle }
         let reclaim = eligible.reduce(0) { $0 + $1.bytes }
@@ -298,7 +320,8 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     + (h.reportOnly ? "  (report only)" : "")
             }
         try? lines.joined(separator: "\n").write(to: report, atomically: true, encoding: .utf8)
-        guard total > 1 << 30 else { return }
+        // The weekly run only speaks up when there's a lot; a run you asked for always answers.
+        guard total > 1 << 30 || asked else { return }
         let biggest = hits.first.map { " — biggest: \(Paths.pretty($0.path)) (\(formatBytes($0.bytes)))" } ?? ""
         var trust = TrustInfo()
         trust.notes = ["\(eligible.count) folders in idle projects"]
@@ -309,7 +332,7 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         actions.append(FileAction(.showReport, "Show report"))
         var m = ToastModel(itemId: nil, url: report, name: "\(formatBytes(total)) reclaimable in Dev",
-                           kind: .folder, subtitle: "Weekly space report" + biggest, trust: trust,
+                           kind: .folder, subtitle: (asked ? "Space report" : "Weekly space report") + biggest, trust: trust,
                            suggestion: nil, actions: actions, decision: nil, editor: nil)
         m.paths = eligible.map(\.path)
         toaster?.show(m)

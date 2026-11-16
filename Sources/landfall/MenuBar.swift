@@ -171,7 +171,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(rk)
         }
         menu.addItem(ActionItem("Organize Desktop…", symbol: "square.grid.3x1.folder.badge.plus") { OrganizerWindowController.show(engine: e) })
-        menu.addItem(ActionItem("Space Report", symbol: "internaldrive") { Agent.shared?.weeklySpaceReport(force: true) })
+        let space = ActionItem("Space Report", symbol: "internaldrive") { Agent.shared?.weeklySpaceReport(force: true) }
+        if let started = Agent.shared?.spaceScanStarted {
+            _ = space.detail("Measuring… (\(max(1, Int(Date().timeIntervalSince(started) / 60))) min)")
+        }
+        menu.addItem(space)
         let undo = ActionItem("Undo Last Action", symbol: "arrow.uturn.backward", key: "z") { [weak self] in
             if let id = e.ledger.lastAppliedOverall()?.itemId {
                 do { _ = try e.undo(id) } catch {

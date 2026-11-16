@@ -230,6 +230,9 @@ final class SignatureCheckTests: XCTestCase {
     func testNotarizedAppIsAcceptedWithSigner() throws {
         let landfall = URL(fileURLWithPath: "/Applications/Landfall.app")
         try XCTSkipUnless(fileExists(landfall.path), "needs an installed, notarized Landfall")
+        // A copy built and installed locally is signed but not notarized.
+        try XCTSkipUnless(LandfallCore.run("/usr/bin/xcrun", ["stapler", "validate", landfall.path], stderr: true).status == 0,
+                          "the installed Landfall isn't notarized (a local build)")
         var t = TrustInfo()
         Trust.codeSignature(&t, landfall)
         XCTAssertEqual(t.gatekeeper, .accepted("Notarized Developer ID"))
