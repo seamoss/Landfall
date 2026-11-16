@@ -2,12 +2,15 @@ import AppKit
 import Foundation
 import LandfallCore
 import ServiceManagement
+import SwiftUI
 
 let usage = """
 landfall — watches Downloads, Desktop and Documents and files what lands there.
 
   landfall init [--force]              write the starter config (~/.config/landfall/config.json)
   landfall scan [--root R] [--recheck] classify everything now (respects mode)
+  landfall organize [--apply] [--all]  sort the Desktop's dated folders: into Documents for good, or the Trash
+                                       (the last week's folders are left unless --all)
   landfall rescan [--root R] [--kept]  re-judge everything waiting and clear out entries for files that are gone;
                                        --kept also proposes homes for items you kept (they always wait for you)
   landfall watch [--menubar]           run the watcher in the foreground (the app does this at login)
@@ -166,6 +169,55 @@ case "scan", "rescan":
     }
     if e.config.mode == .shadow {
         print(dim("\nShadow mode: nothing was moved. `landfall mode auto` to let it act, or `landfall apply` per item."))
+    }
+
+case "organize":
+    // Everything in the Desktop's dated folders: into the library for good, to the Trash, or left.
+    let e = makeEngine()
+    if let out = option("--snapshot") {
+        // Lists only draw on screen: show the window briefly and capture just it.
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.appearance = NSAppearance(named: flag("--dark") ? .darkAqua : .aqua)
+        let wc = OrganizerWindowController(engine: e)
+        wc.showWindow(nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(1.5))
+        let id = wc.window?.windowNumber ?? 0
+        run("/usr/sbin/screencapture", ["-x", "-o", "-l", "\(id)", out])
+        print("wrote \(out)")
+        exit(0)
+    }
+    let all = flag("--all")
+    let entries = e.organizerEntries().map { en in
+        // The last week's folders are the working shelf: left alone unless --all.
+        all || !OrganizerModel.isRecent(en.cabinet) ? en
+            : OrganizerEntry(path: en.path, name: en.name, cabinet: en.cabinet, itemId: en.itemId, kindLabel: en.kindLabel,
+                             size: en.size, suggestion: .leave, reason: "from the last \(OrganizerModel.recentDays) days",
+                             rule: en.rule, confidence: en.confidence)
+    }
+    if entries.isEmpty { print("Nothing in Landfall's dated folders."); exit(0) }
+    let apply = flag("--apply")
+    var counts = (file: 0, trash: 0, leave: 0, failed: 0)
+    var lastCabinet = ""
+    for en in entries {
+        if en.cabinet != lastCabinet { print(bold("\n\(en.cabinet)")); lastCabinet = en.cabinet }
+        let what: String
+        switch en.suggestion {
+        case .file(let dest): what = "→ \(Paths.pretty(dest))"; counts.file += 1
+        case .trash: what = "→ Trash"; counts.trash += 1
+        case .leave: what = dim("leave"); counts.leave += 1
+        }
+        print("  \(en.name)  \(what)  \(dim("[\(en.rule)] \(en.reason)"))")
+        if apply && en.suggestion != .leave {
+            do { try e.organize(en, en.suggestion) } catch { counts.failed += 1; print("    ✗ \(error)") }
+        }
+    }
+    print("\n\(counts.file) to file · \(counts.trash) to Trash · \(counts.leave) left")
+    if apply {
+        let tidied = e.tidyCabinets()
+        print("Done\(counts.failed > 0 ? " (\(counts.failed) failed)" : "").\(tidied.isEmpty ? "" : " Removed \(tidied.count) empty dated folder\(tidied.count == 1 ? "" : "s").") `landfall undo` reverses the last one.")
+    } else {
+        print(dim("Nothing moved. `landfall organize --apply` does the suggested ones; Organize Desktop… in the menu lets you choose each."))
     }
 
 case "search":

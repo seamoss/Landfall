@@ -15,3 +15,4 @@ New decisions get the next number (copy `template.md`); superseded records stay,
 | [0008](0008-distribution.md) | Ship as a Developer ID-signed, notarized app bundle via GitHub releases | Accepted |
 | [0009](0009-sparkle-updates.md) | Update in place with Sparkle, fed from the public repo; gentle reminders only | Accepted |
 | [0010](0010-mac-app-store-edition.md) | A sandboxed Mac App Store edition built from the same sources | Accepted |
+| [0011](0011-desktop-organizer.md) | An Organizer empties the Desktop's dated folders into the library or the Trash, by explicit choice | Accepted |

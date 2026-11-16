@@ -163,6 +163,7 @@ final class Agent: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         switch comps.host ?? "" {
         case "settings": openSettings()
         case "about": showAbout()
+        case "organize": OrganizerWindowController.show(engine: e)
         case "scan": e.scanNow()
         case "space": weeklySpaceReport(force: true)
         case "updates": Updater.shared.checkForUpdates()

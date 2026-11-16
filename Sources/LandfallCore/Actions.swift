@@ -298,6 +298,8 @@ public struct ToastModel {
     public var destinationLabel: String?
     /// File it when the countdown runs out.
     public var autoFile = false
+    /// The watched folder it landed in ("downloads", "desktop", "documents"), for the toast's color.
+    public var root: String?
 
     public init(itemId: Int64?, url: URL, name: String, kind: FileKind, subtitle: String, trust: TrustInfo,
                 suggestion: String?, actions: [FileAction], decision: Decision?, editor: Editor?) {

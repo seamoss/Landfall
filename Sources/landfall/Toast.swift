@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import LandfallCore
 import QuickLookThumbnailing
 
@@ -173,17 +174,16 @@ final class Toast: NSObject {
     private var ticker: Timer?
     private var paused = false
     private var closing = false
-    private let status = NSTextField(labelWithString: "")
-    private let bar = CountdownBar()
-    private var buttons: [NSControl] = []
+    private let state: ToastState
 
-    static let width: CGFloat = 380
+    static let width: CGFloat = ToastCard.width
 
     init(model: ToastModel, engine: Engine, seconds: Double) {
         self.model = model
         self.engine = engine
         self.seconds = seconds
         remaining = seconds
+        state = ToastState(model: model)
         panel = ToastPanel(contentRect: NSRect(x: 0, y: 0, width: Toast.width, height: 120),
                            styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
         super.init()
@@ -201,15 +201,21 @@ final class Toast: NSObject {
     var height: CGFloat { panel.frame.height }
 
     private func build() {
-        buttons = []
-        let content = Toast.makeView(model, target: self, status: status, bar: bar, buttons: &buttons, live: true) { [weak self] inside in
-            self?.paused = inside
-            self?.updateStatus()
-        }
+        state.model = model
+        state.enabled = true
+        let card = ToastCard(state: state, live: true,
+                             onAction: { [weak self] a in self?.trigger(a) },
+                             onDismiss: { [weak self] in self?.close() },
+                             onHover: { [weak self] inside in
+                                 self?.paused = inside
+                                 self?.updateStatus()
+                             })
+        let hosting = FirstClickHostingView(rootView: card)
         let top = panel.frame.maxY
-        panel.contentView = content
-        let size = NSSize(width: Toast.width, height: content.fittingSize.height)
+        panel.contentView = hosting
+        let size = NSSize(width: Toast.width, height: hosting.fittingSize.height)
         panel.setFrame(NSRect(x: panel.frame.minX, y: top - size.height, width: size.width, height: size.height), display: true)
+        panel.invalidateShadow()
         updateStatus()
     }
 
@@ -258,17 +264,19 @@ final class Toast: NSObject {
     private func tick() {
         guard !paused, !closing else { return }
         remaining -= 0.1
-        bar.progress = max(0, remaining / seconds)
         updateStatus()
         if remaining <= 0 { timedOut() }
     }
 
     private func updateStatus() {
-        bar.progress = max(0, remaining / seconds)
-        bar.tint = model.autoFile ? .controlAccentColor : .tertiaryLabelColor
-        guard model.autoFile else { return }
-        status.textColor = .secondaryLabelColor
-        status.stringValue = paused ? "Paused — move away to continue" : "Files in \(max(1, Int(remaining.rounded(.up))))s"
+        state.progress = max(0, remaining / seconds)
+        guard model.autoFile, !state.statusIsError else { return }
+        state.status = paused ? "paused" : "files in \(max(1, Int(remaining.rounded(.up))))s"
+    }
+
+    private func showStatus(_ text: String, error: Bool = false) {
+        state.status = text
+        state.statusIsError = error
     }
 
     /// The default behavior: file it (confident, ordinary moves only), otherwise just go away.
@@ -280,8 +288,7 @@ final class Toast: NSObject {
             Log.info("toast: auto-filed \(model.name)")
             becomeReceipt(it)
         } catch {
-            status.stringValue = "\(error)"
-            status.textColor = .systemRed
+            showStatus("\(error)", error: true)
             restart(4)
         }
     }
@@ -301,6 +308,7 @@ final class Toast: NSObject {
         r.isReceipt = true
         r.actions = [FileAction(.undo, "Undo")] + (it.status == "trashed" ? [] : [FileAction(.reveal, "Show in Finder")])
         model = r
+        showStatus("")
         build()
         restart(6)
         onResize?()
@@ -355,252 +363,22 @@ final class Toast: NSObject {
                                               .addRule, .declineRule, .undoAll, .cleanSpace]
             if ends.contains(a.kind) {
                 model.autoFile = false
-                buttons.forEach { $0.isEnabled = false }
-                status.stringValue = msg ?? "Done"
-                status.textColor = .secondaryLabelColor
+                state.model = model
+                state.enabled = false
+                showStatus(msg ?? "Done")
                 restart(2.5)
             } else {
                 // Looking at it (Preview, Copy, Open…) buys a fresh countdown.
-                if let msg { status.stringValue = msg }
+                if let msg { showStatus(msg) }
                 restart(seconds)
             }
         } catch {
-            status.stringValue = "\(error)"
-            status.textColor = .systemRed
+            showStatus("\(error)", error: true)
             restart(max(remaining, 6))
         }
     }
 
-    // MARK: Layout
-
-    static let cornerRadius: CGFloat = 20
-
-    static func makeView(_ m: ToastModel, target: Toast?, status: NSTextField, bar: CountdownBar,
-                         buttons: inout [NSControl], live: Bool, onHover: ((Bool) -> Void)? = nil) -> NSView {
-        // Everything is laid out in `content`; the outer view supplies the material.
-        let content = NSView()
-        content.translatesAutoresizingMaskIntoConstraints = false
-
-        // Thumbnail (file icon until Quick Look has one).
-        let thumb = NSImageView(image: NSWorkspace.shared.icon(forFile: m.url.path))
-        thumb.imageScaling = .scaleProportionallyUpOrDown
-        thumb.wantsLayer = true
-        thumb.layer?.cornerRadius = 8
-        thumb.layer?.cornerCurve = .continuous
-        thumb.layer?.masksToBounds = true
-        thumb.translatesAutoresizingMaskIntoConstraints = false
-        thumb.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        thumb.heightAnchor.constraint(equalToConstant: 44).isActive = true
-        thumb.setAccessibilityElement(false)
-        Thumbnail.load(m.url, size: 88) { if let img = $0 { thumb.image = img } }
-
-        let title = NSTextField(labelWithString: m.name)
-        title.font = .systemFont(ofSize: 13, weight: .semibold)
-        title.lineBreakMode = .byTruncatingMiddle
-        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        var lines: [NSView] = [title, label(m.subtitle, .secondaryLabelColor)]
-        // Trust only when it says something: caution, danger, or a signature.
-        if m.trust.level != .trusted || m.trust.signer != nil {
-            let symbol = m.trust.level == .trusted ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"
-            lines.append(symbolLabel(symbol, m.trust.summary,
-                                     m.trust.level == .trusted ? .secondaryLabelColor : trustColor(m.trust.level), lines: 2))
-        }
-        if let dest = m.destinationLabel {
-            let smart = m.decision?.rule == "ai"
-            let d = symbolLabel(m.isReceipt ? "checkmark.circle.fill" : smart ? "sparkles" : "arrow.turn.down.right", dest, .labelColor,
-                                weight: .medium, symbolColor: m.isReceipt ? .systemGreen : smart ? .systemPurple : .secondaryLabelColor)
-            d.toolTip = m.suggestion
-            lines.append(d)
-            if smart, !m.isReceipt, let why = m.suggestion {
-                lines.append(label(why, .secondaryLabelColor, lines: 2))
-            }
-        } else if let s = m.suggestion {
-            lines.append(label(s, .labelColor, lines: 2))
-        }
-        let text = NSStackView(views: lines)
-        text.orientation = .vertical
-        text.alignment = .leading
-        text.spacing = 2
-        text.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        text.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let header = NSStackView(views: [thumb, text])
-        header.alignment = .top
-        header.spacing = 10
-
-        // Three buttons at most; everything else lives under ⋯.
-        var row: [NSView] = []
-        let visibleCount = m.actions.count > 3 ? 3 : m.actions.count
-        for (i, a) in m.actions.prefix(visibleCount).enumerated() {
-            let b: NSButton
-            if i == 0 {
-                // The primary action stays in accent color even though toasts never become the key window.
-                b = PrimaryButton(title: a.title, fill: a.confirm == nil ? .controlAccentColor : .systemOrange,
-                                  target: target, action: #selector(Toast.buttonClicked(_:)))
-            } else {
-                b = NSButton(title: a.title, target: target, action: #selector(Toast.buttonClicked(_:)))
-                styleSecondary(b)
-                if a.confirm != nil { b.contentTintColor = .systemOrange }
-            }
-            b.tag = i
-            buttons.append(b)
-            row.append(b)
-        }
-        if m.actions.count > visibleCount {
-            let more = NSPopUpButton(frame: .zero, pullsDown: true)
-            styleSecondary(more)
-            (more.cell as? NSPopUpButtonCell)?.arrowPosition = .noArrow
-            more.setAccessibilityLabel("More actions")
-            let head = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            head.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "More")
-            more.menu?.addItem(head)
-            for (i, a) in m.actions.enumerated().dropFirst(visibleCount) {
-                let item = NSMenuItem(title: a.title, action: #selector(Toast.menuPicked(_:)), keyEquivalent: "")
-                item.target = target
-                item.tag = i
-                item.image = symbol(for: a.kind).flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
-                more.menu?.addItem(item)
-            }
-            buttons.append(more)
-            row.append(more)
-        }
-        let buttonRow = NSStackView(views: row)
-        buttonRow.spacing = 8
-
-        status.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        status.textColor = .secondaryLabelColor
-        status.lineBreakMode = .byTruncatingTail
-        let footer = NSStackView(views: [buttonRow, NSView(), status])
-        footer.alignment = .centerY
-        footer.distribution = .fill
-
-        let stack = NSStackView(views: [header, footer])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 14
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 20, right: 14)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        // ✕ sits in the corner, outside the layout, so it never pushes the text around.
-        let close = closeButton(target: target)
-        close.translatesAutoresizingMaskIntoConstraints = false
-        bar.translatesAutoresizingMaskIntoConstraints = false
-
-        if let onHover {
-            let hover = HoverView(frame: .zero)
-            hover.onHover = onHover
-            hover.translatesAutoresizingMaskIntoConstraints = false
-            content.addSubview(hover)
-            NSLayoutConstraint.activate([
-                hover.leadingAnchor.constraint(equalTo: content.leadingAnchor), hover.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-                hover.topAnchor.constraint(equalTo: content.topAnchor), hover.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            ])
-        }
-        content.addSubview(stack)
-        content.addSubview(bar)
-        content.addSubview(close)
-        NSLayoutConstraint.activate([
-            content.widthAnchor.constraint(equalToConstant: width),
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: content.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            header.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -28 - 16),
-            footer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -28),
-            close.topAnchor.constraint(equalTo: content.topAnchor, constant: 8),
-            close.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -8),
-            // Countdown: an inset capsule under the buttons, clear of the rounded corners.
-            bar.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 18),
-            bar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -18),
-            bar.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -8),
-            bar.heightAnchor.constraint(equalToConstant: 3),
-        ])
-
-        let tintBorder = m.trust.level == .trusted ? nil : trustColor(m.trust.level).withAlphaComponent(0.7)
-        let outer = wrap(content, live: live, border: tintBorder)
-        // The glass view must not grow past the content's width (it would hang off-screen).
-        outer.translatesAutoresizingMaskIntoConstraints = false
-        outer.widthAnchor.constraint(equalToConstant: width).isActive = true
-        return outer
-    }
-
-    /// Liquid Glass on macOS 26; vibrant material before; solid when Reduce Transparency is on.
-    static func wrap(_ content: NSView, live: Bool, border: NSColor?) -> NSView {
-        let solid = !live || NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
-        let outer: NSView
-        if !solid, #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.cornerRadius = cornerRadius
-            glass.contentView = content
-            outer = glass
-        } else {
-            let base: NSView
-            if solid {
-                base = NSView()
-                base.wantsLayer = true
-                base.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-            } else {
-                let fx = NSVisualEffectView()
-                fx.material = .popover
-                fx.state = .active
-                fx.blendingMode = .behindWindow
-                base = fx
-            }
-            base.wantsLayer = true
-            base.layer?.cornerRadius = cornerRadius
-            base.layer?.cornerCurve = .continuous
-            base.layer?.masksToBounds = true
-            base.addSubview(content)
-            NSLayoutConstraint.activate([
-                content.leadingAnchor.constraint(equalTo: base.leadingAnchor), content.trailingAnchor.constraint(equalTo: base.trailingAnchor),
-                content.topAnchor.constraint(equalTo: base.topAnchor), content.bottomAnchor.constraint(equalTo: base.bottomAnchor),
-            ])
-            outer = base
-        }
-        outer.wantsLayer = true
-        if let border {
-            outer.layer?.cornerRadius = cornerRadius
-            outer.layer?.cornerCurve = .continuous
-            outer.layer?.borderWidth = 1.5
-            outer.layer?.borderColor = border.cgColor
-        } else if solid || NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast {
-            outer.layer?.borderWidth = 1
-            outer.layer?.borderColor = NSColor.separatorColor.cgColor
-        }
-        return outer
-    }
-
-    /// Glass capsules on macOS 26, rounded bezels before.
-    static func styleSecondary(_ b: NSButton) {
-        b.controlSize = .regular
-        b.font = .systemFont(ofSize: 12)
-        if #available(macOS 26.0, *) {
-            b.bezelStyle = .glass
-            b.borderShape = .capsule
-        } else {
-            b.bezelStyle = .rounded
-        }
-    }
-
-    static func closeButton(target: Toast?) -> NSButton {
-        let image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close")!
-        let b = NSButton(image: image, target: target, action: #selector(Toast.close))
-        b.setAccessibilityLabel("Close")
-        if #available(macOS 26.0, *) {
-            b.bezelStyle = .glass
-            b.borderShape = .circle
-            b.controlSize = .mini
-            b.symbolConfiguration = .init(pointSize: 8, weight: .bold)
-        } else {
-            b.isBordered = false
-            b.contentTintColor = .tertiaryLabelColor
-            b.symbolConfiguration = .init(pointSize: 10, weight: .semibold)
-            b.widthAnchor.constraint(equalToConstant: 16).isActive = true
-            b.heightAnchor.constraint(equalToConstant: 16).isActive = true
-        }
-        return b
-    }
+    // MARK: Snapshot
 
     static func symbol(for kind: FileAction.Kind) -> String? {
         switch kind {
@@ -623,176 +401,23 @@ final class Toast: NSObject {
         }
     }
 
-    /// An SF Symbol followed by text, on one line.
-    static func symbolLabel(_ symbol: String, _ text: String, _ color: NSColor, weight: NSFont.Weight = .regular,
-                            symbolColor: NSColor? = nil, lines: Int = 1) -> NSTextField {
-        let font = NSFont.systemFont(ofSize: weight == .regular ? 11 : 12, weight: weight)
-        let attachment = NSTextAttachment()
-        let config = NSImage.SymbolConfiguration(pointSize: font.pointSize - 1, weight: .semibold)
-            .applying(.init(paletteColors: [symbolColor ?? color]))
-        attachment.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config)
-        let s = NSMutableAttributedString(attachment: attachment)
-        // The paragraph style decides how an attributed label breaks; without it the text wraps
-        // past the one line the label was measured for and draws over the next row.
-        let para = NSMutableParagraphStyle()
-        para.lineBreakMode = lines == 1 ? .byTruncatingTail : .byWordWrapping
-        s.append(NSAttributedString(string: "  " + text, attributes: [.font: font, .foregroundColor: color,
-                                                                       .paragraphStyle: para]))
-        s.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: s.length))
-        let l = NSTextField(labelWithAttributedString: s)
-        l.lineBreakMode = para.lineBreakMode
-        l.maximumNumberOfLines = lines
-        l.cell?.wraps = lines > 1
-        l.cell?.truncatesLastVisibleLine = true
-        l.preferredMaxLayoutWidth = textWidth
-        l.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return l
-    }
-
-    static let textWidth: CGFloat = width - 28 - 44 - 10 - 16
-
-    static func label(_ s: String, _ color: NSColor, lines: Int = 1) -> NSTextField {
-        let l = NSTextField(wrappingLabelWithString: s)
-        l.font = .systemFont(ofSize: 11)
-        l.textColor = color
-        l.maximumNumberOfLines = lines
-        l.lineBreakMode = lines == 1 ? .byTruncatingTail : .byWordWrapping
-        l.cell?.truncatesLastVisibleLine = true
-        l.preferredMaxLayoutWidth = textWidth
-        return l
-    }
-
-    static func trustColor(_ l: TrustInfo.Level) -> NSColor {
-        switch l {
-        case .trusted: return .systemGreen
-        case .caution: return .systemOrange
-        case .danger: return .systemRed
-        }
-    }
-
     /// Render a toast to PNG without showing it (for checking layouts).
     static func snapshot(_ m: ToastModel, to url: URL, dark: Bool, progress: Double = 0.6, status text: String? = nil) throws {
         NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        var unused: [NSControl] = []
-        let status = NSTextField(labelWithString: text ?? (m.autoFile ? "Files in 12s" : ""))
-        let bar = CountdownBar()
-        bar.progress = progress
-        bar.tint = m.autoFile ? .controlAccentColor : .tertiaryLabelColor
-        let view = makeView(m, target: nil, status: status, bar: bar, buttons: &unused, live: false)
+        let state = ToastState(model: m)
+        state.progress = progress
+        state.status = text ?? (m.autoFile ? "files in 12s" : "")
+        let view = NSHostingView(rootView: ToastCard(state: state, live: false))
         view.appearance = NSApplication.shared.appearance
-        RunLoop.main.run(until: Date().addingTimeInterval(1.0))  // let the thumbnail arrive
         view.setFrameSize(view.fittingSize)
         view.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw LandfallError.action("render failed") }
         NSApplication.shared.appearance?.performAsCurrentDrawingAppearance {
-            view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             view.cacheDisplay(in: view.bounds, to: rep)
         }
         guard let png = rep.representation(using: .png, properties: [:]) else { throw LandfallError.action("encode failed") }
         try png.write(to: url)
-    }
-}
-
-/// A filled, always-accent button: the system draws default buttons grey in non-key windows like toasts.
-final class PrimaryButton: NSButton {
-    private let fill: NSColor
-
-    init(title: String, fill: NSColor, target: AnyObject?, action: Selector) {
-        self.fill = fill
-        super.init(frame: .zero)
-        self.title = title
-        self.target = target
-        self.action = action
-        isBordered = false
-        focusRingType = .none
-        wantsLayer = true
-        layer?.cornerCurve = .continuous
-        attributedTitle = NSAttributedString(string: title, attributes: [
-            .foregroundColor: NSColor.white,
-            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-        ])
-        updateLayer()
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    override var wantsUpdateLayer: Bool { true }
-    override var acceptsFirstResponder: Bool { false }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    /// Same height as the neighboring system buttons (glass capsules on macOS 26).
-    static let height: CGFloat = {
-        let probe = NSButton(title: "Keep", target: nil, action: nil)
-        Toast.styleSecondary(probe)
-        return max(22, probe.intrinsicContentSize.height)
-    }()
-
-    override var intrinsicContentSize: NSSize {
-        let text = attributedTitle.size()
-        return NSSize(width: ceil(text.width) + 28, height: Self.height)
-    }
-
-    override func layout() {
-        super.layout()
-        if #available(macOS 26.0, *) {
-            layer?.cornerRadius = bounds.height / 2  // capsule, like Tahoe's buttons
-        } else {
-            layer?.cornerRadius = 6
-        }
-    }
-
-    override var isEnabled: Bool { didSet { needsDisplay = true } }
-    override var isHighlighted: Bool { didSet { needsDisplay = true } }
-
-    override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            var color = fill.usingColorSpace(.deviceRGB) ?? fill
-            if isHighlighted { color = color.blended(withFraction: 0.18, of: .black) ?? color }
-            layer?.backgroundColor = color.withAlphaComponent(isEnabled ? 1 : 0.45).cgColor
-        }
-    }
-
-    override func viewDidChangeEffectiveAppearance() { needsDisplay = true }
-}
-
-/// A thin draining bar along the bottom edge.
-final class CountdownBar: NSView {
-    private let fill = CALayer()
-    var progress: Double = 1 { didSet { needsLayout = true; layoutFill() } }
-    var tint: NSColor = .controlAccentColor { didSet { updateColors() } }
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        layer?.addSublayer(fill)
-        layer?.cornerRadius = 1.5
-        layer?.masksToBounds = true
-        fill.cornerRadius = 1.5
-        updateColors()
-        setAccessibilityElement(false)
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func layout() {
-        super.layout()
-        layoutFill()
-    }
-
-    override func viewDidChangeEffectiveAppearance() { updateColors() }
-
-    private func layoutFill() {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        fill.frame = NSRect(x: 0, y: 0, width: bounds.width * CGFloat(max(0, min(1, progress))), height: bounds.height)
-        CATransaction.commit()
-    }
-
-    private func updateColors() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
-            fill.backgroundColor = tint.withAlphaComponent(0.9).cgColor
-        }
     }
 }
 
@@ -807,23 +432,9 @@ enum Thumbnail {
     }
 }
 
-final class HoverView: NSView {
-    var onHover: ((Bool) -> Void)?
-
-    override func updateTrackingAreas() {
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                       owner: self, userInfo: nil))
-    }
-
-    override func mouseEntered(with event: NSEvent) { onHover?(true) }
-    override func mouseExited(with event: NSEvent) { onHover?(false) }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }  // never swallow clicks
-}
-
 // MARK: - Stacking and bursts
 
-/// Stacks toasts in the top-right corner; a burst of arrivals becomes one summary toast.
+/// Stacks toasts centered under the menu bar; a burst of arrivals becomes one summary toast.
 final class Toaster {
     let engine: Engine
     var toasts: [Toast] = []
@@ -875,7 +486,7 @@ final class Toaster {
 
     private func origin(for index: Int, height: CGFloat) -> NSPoint {
         let screen = screenFrame
-        var y = screen.maxY - 12
+        var y = screen.maxY - 16
         for t in toasts.prefix(index) { y -= t.height + 10 }
         let w = index < toasts.count ? toasts[index].panel.frame.width : Toast.width
         return NSPoint(x: (screen.midX - w / 2).rounded(), y: max(screen.minY + 12, y - height))

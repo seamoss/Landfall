@@ -5,6 +5,12 @@ All notable changes to Landfall. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+### Added
+- **Organize Desktop…** in the menu, and `landfall organize`: everything in the Desktop's dated folders, each with a suggestion to file it into Documents for good, send it to the Trash, or leave it. Choose per item or per day, Apply, and Undo All if you change your mind. The last week's folders start as Leave.
+
+### Changed
+- **New toast design**, matching Kronist: a colored bar down the left edge, ✕ on the title line, details with aligned icons, Keep on the right, and the countdown as a bar along the bottom edge in the card's color.
+
 ## [0.7.1] - 2026-11-05
 
 ### Added

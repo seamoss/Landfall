@@ -585,11 +585,12 @@ public final class Engine: ClassifierContext {
         var actions = ActionPlanner.plan(f, kind: kind, trust: trust, decision: d, config: config, editor: editor)
         if itemId == nil { actions.removeAll { $0.kind == .fileNow || $0.kind == .keep } }
         if Keychain.apiKey() == nil { actions.removeAll { $0.kind == .askAI } }  // Smart Filing needs your key
-        let from = trust.originHost.map { " · from \($0)" } ?? ""
+        // Where it came from has its own line on the toast (trust.originHost).
         var m = ToastModel(itemId: itemId, url: url, name: f.name, kind: kind,
-                           subtitle: "\(kind.label) · \(formatBytes(f.size))\(from)", trust: trust,
+                           subtitle: "\(kind.label) · \(formatBytes(f.size))", trust: trust,
                            suggestion: d.map(\.reason), actions: actions, decision: d, editor: editor)
         m.destinationLabel = d.flatMap(ActionPlanner.label(forDestination:))
+        m.root = root?.name
         m.autoFile = itemId != nil && ActionPlanner.mayAutoFile(d, kind: kind, trust: trust, config: config)
         if m.autoFile {
             // Countdown toasts lead with the default, then Keep, then the most useful thing for this kind.
@@ -623,6 +624,7 @@ public final class Engine: ClassifierContext {
         let dst = try Mover.move(URL(fileURLWithPath: it.path), toDir: srcURL.deletingLastPathComponent(),
                                  name: srcURL.lastPathComponent)
         let np = normalize(dst.path)
+        markCabinet(containing: np)  // the Organizer may have tidied its dated folder away; it comes back marked
         ledger.markUndone(ev.id)
         ledger.update(id, ["path": np, "status": "kept", "bookmark": Mover.bookmark(np), "name": dst.lastPathComponent])
         ledger.addEvent(id, "undo", src: it.path, dst: np, reason: "undid \(ev.type)", applied: true)

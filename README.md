@@ -6,7 +6,7 @@ Landfall watches **Downloads**, **Desktop** and **Documents**, works out what ea
 
 A native macOS menu bar app and command-line tool. macOS 14+, designed for macOS 26. No dependencies.
 
-[Install](#install) · [How it works](#how-it-works) · [Toasts](#toasts) · [Smart Filing](#smart-filing) · [The menu and Settings](#the-menu-and-settings) · [Command line](#command-line) · [Configuration](#configuration) · [Development](#development) · [Releasing](#releasing) · [Decisions](docs/adr/README.md) · [Changelog](CHANGELOG.md)
+[Install](#install) · [How it works](#how-it-works) · [Toasts](#toasts) · [Smart Filing](#smart-filing) · [Organize Desktop](#organize-desktop) · [The menu and Settings](#the-menu-and-settings) · [Command line](#command-line) · [Configuration](#configuration) · [Development](#development) · [Releasing](#releasing) · [Decisions](docs/adr/README.md) · [Changelog](CHANGELOG.md)
 
 ## Install
 
@@ -63,13 +63,14 @@ Every item is followed from the moment it lands — even when you move it yourse
 
 ## Toasts
 
-When something new finishes landing, a card drops down under the menu bar:
+When something new finishes landing, a card drops down under the menu bar, laid out like Kronist's:
 
-- a thumbnail, the file's kind, size and where it came from;
+- a **colored bar** down the left: green for a receipt, red or orange when there's a risk, purple when Smart Filing chose, otherwise the folder it landed in (Downloads blue, Desktop teal, Documents indigo);
+- the file's name with **✕** on the same line, then its kind, size and the countdown ("files in 12s");
+- where it came from, or a **trust line** when there's something to say: downloaded and unsigned, rejected by Gatekeeper, contains macros, contains secrets;
 - **→ where it's going** (✦ when Smart Filing chose it);
-- a trust line only when there's something to say: downloaded and unsigned, rejected by Gatekeeper, contains macros, contains secrets;
-- **File now · Keep** and the most useful action for the type, with the rest under ⋯;
-- a **countdown**: when it runs out, a confident move of an ordinary file is filed, and the card becomes "Filed → …" with Undo. Hover to pause.
+- the primary action filled, the rest under ⌄, and **Keep** on the right;
+- a **countdown bar** along the bottom edge in the card's color: when it runs out, a confident move of an ordinary file is filed, and the card becomes "Filed → …" with Undo. Hover to pause.
 
 Actions by type:
 
@@ -103,9 +104,15 @@ Settings › Smart Filing:
 - **Privacy:** choose how much text is sent (1,500 / 4,000 / 8,000 characters). Also sent: file name, type, size, download site, your folder names, client names and aliases. **Never sent:** credentials or anything that looks like a secret, résumés and contact cards, people's names from your client list. **Try on a File…** shows the exact text before anything is sent.
 - **Clients & Projects:** the names, aliases, people, sites and meetings that both Smart Filing and the built-in rules use.
 
+## Organize Desktop
+
+The Desktop files into dated folders (`Desktop/2026-10-13/`) so things stay at hand while you use them. **Organize Desktop…** in the menu finishes the job: every item in those folders is listed by date with a suggestion: **file it into Documents for good** (the same rules, asked where it would go if the Desktop filed into the library), **Trash** (duplicates, opened installers, archives already unzipped), or **Leave**. Change any of them, or a whole day at once, then Apply. Folders from the last 7 days start as Leave, since the Desktop is a working shelf. Dated folders left empty go to the Trash. Every move is an ordinary recorded event: **Undo All** reverses the batch, and `landfall why` explains any item ([ADR 0011](docs/adr/0011-desktop-organizer.md)).
+
+From the command line: `landfall organize` previews, `--apply` does the suggested moves (`--all` includes the last week).
+
 ## The menu and Settings
 
-The menu bar glyph shows a count when decisions are waiting. The menu lists what needs a decision (with Apply All), what landed recently and where it went, and tools: Smart File unplaced items, import credentials to 1Password, Scan Now (⌘R), Review Kept Items, Space Report, Undo Last Action (⌘Z), Mode, Settings… (⌘,).
+The menu bar glyph shows a count when decisions are waiting. The menu lists what needs a decision (with Apply All), what landed recently and where it went, and tools: Smart File unplaced items, import credentials to 1Password, Scan Now (⌘R), Review Kept Items, Organize Desktop…, Space Report, Undo Last Action (⌘Z), Mode, Settings… (⌘,).
 
 Settings has four panes; changes apply immediately:
 
